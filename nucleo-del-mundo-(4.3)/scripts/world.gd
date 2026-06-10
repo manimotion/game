@@ -13,7 +13,6 @@
 extends Node2D
 
 const ChunkRendererScript := preload("res://scripts/chunk_renderer.gd")
-const FxScript := preload("res://scripts/fx.gd")
 
 const TILE := 32
 const CHUNK := 16             # tiles por lado de chunk (GDD §2.1)
@@ -31,6 +30,15 @@ const T_BEDROCK := 4
 const T_WOOD := 5             # tronco — decorativo, no colisiona
 const T_LEAF := 6             # hojas — decorativo, no colisiona
 
+const COLORS := {
+	T_DIRT: Color(0.55, 0.36, 0.20),
+	T_STONE: Color(0.48, 0.50, 0.55),
+	T_ORE: Color(0.92, 0.76, 0.18),
+	T_BEDROCK: Color(0.15, 0.15, 0.18),
+	T_WOOD: Color(0.42, 0.27, 0.13),
+	T_LEAF: Color(0.20, 0.55, 0.22),
+}
+
 # GDD §3.2: HP y drop por tipo de tile
 const HP := {T_DIRT: 40, T_STONE: 100, T_ORE: 140, T_WOOD: 60, T_LEAF: 20}
 const DROPS := {T_DIRT: "dirt", T_STONE: "stone", T_ORE: "ore", T_WOOD: "wood"}
@@ -38,7 +46,6 @@ const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD}
 const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true}
 
 const REACH := 200.0          # alcance validado por el servidor
-const DAY_LEN := 280.0        # segundos de un ciclo día+noche completo
 
 var tiles: Dictionary = {}         # coord -> tipo (servidor: mundo completo)
 var damage: Dictionary = {}        # coord -> HP restante (SOLO servidor)
@@ -46,61 +53,20 @@ var damage_ratio: Dictionary = {}  # coord -> 0..1 (visual, todos los peers)
 var loaded: Dictionary = {}        # ccoord -> true (chunks cargados, cliente)
 var renderers: Dictionary = {}     # ccoord -> ChunkRenderer
 var _pending: Dictionary = {}      # ccoord -> true (peticiones en vuelo)
-var fx: Node2D = null              # partículas (Fase 5B, solo visual)
-var _cloud_t := 0.0                # deriva de las nubes
-var _canvas_mod: CanvasModulate = null   # tinte global día/noche
-
-
-func _ready() -> void:
-	fx = Node2D.new()
-	fx.set_script(FxScript)
-	fx.z_index = 20
-	add_child(fx)
-	_canvas_mod = CanvasModulate.new()
-	add_child(_canvas_mod)
-
-
-func _process(delta: float) -> void:
-	_cloud_t += delta
-	# Tinte nocturno sobre todo el canvas (tiles, jugadores, NPCs);
-	# la UI vive en un CanvasLayer y no se ve afectada.
-	_canvas_mod.color = Color(0.45, 0.5, 0.72).lerp(Color.WHITE, daylight())
-	queue_redraw()   # solo redibuja el fondo de este nodo (los chunks son hijos)
 
 
 # -------------------------------------------------------------
-# CICLO DÍA/NOCHE (solo visual): usa la hora del sistema, así
-# todos los peers ven la misma fase sin tráfico de red.
-# -------------------------------------------------------------
-func day_phase() -> float:
-	return fmod(Time.get_unix_time_from_system(), DAY_LEN) / DAY_LEN
-
-
-## 1.0 = pleno día, 0.0 = plena noche, con transiciones suaves.
-func daylight() -> float:
-	return clampf(sin(TAU * day_phase()) * 1.6 + 0.5, 0.0, 1.0)
-
-
-# -------------------------------------------------------------
-# GENERACIÓN (solo servidor): terreno con cuevas talladas por
-# ruido 2D + islas flotantes en el cielo (GDD §3).
+# GENERACIÓN (solo servidor)
 # -------------------------------------------------------------
 func generate() -> void:
 	var noise := FastNoiseLite.new()
 	noise.seed = randi()
 	noise.frequency = 0.04
-	var caves := FastNoiseLite.new()
-	caves.seed = randi()
-	caves.frequency = 0.08
 
 	for x in W:
 		var surface := SKY_ROWS + int((noise.get_noise_1d(float(x)) + 1.0) * 4.0)
 		for y in range(surface, H):
 			var depth := y - surface
-			# Cuevas: bolsas de aire bajo tierra (los 6 primeros tiles
-			# de profundidad quedan intactos para no romper el spawn)
-			if depth > 5 and y < H - 2 and caves.get_noise_2d(float(x), float(y)) > 0.34:
-				continue
 			var t := T_DIRT
 			if depth > 5:
 				t = T_STONE
@@ -111,28 +77,6 @@ func generate() -> void:
 		# Árboles (§8 — fuente de madera para crafting)
 		if x > 2 and x < W - 3 and randf() < 0.10:
 			_plant_tree(x, surface)
-	_spawn_islands()
-
-
-## Islas flotantes: óvalos de tierra (césped arriba) con núcleo de
-## piedra y mineral extra — recompensa por construir hacia arriba.
-func _spawn_islands() -> void:
-	for i in randi_range(4, 6):
-		var cx := randi_range(10, W - 11)
-		var cy := randi_range(4, SKY_ROWS - 6)
-		var rw := randi_range(4, 7)
-		var rh := randi_range(2, 3)
-		for dx in range(-rw, rw + 1):
-			for dy in range(-rh, rh + 1):
-				var nx := float(dx) / float(rw)
-				var ny := float(dy) / float(rh)
-				if nx * nx + ny * ny > 1.0:
-					continue
-				var c := Vector2i(cx + dx, cy + dy)
-				if dy <= 0:
-					tiles[c] = T_DIRT
-				else:
-					tiles[c] = T_ORE if randf() < 0.30 else T_STONE
 
 
 func _plant_tree(x: int, surface: int) -> void:
@@ -148,9 +92,7 @@ func _plant_tree(x: int, surface: int) -> void:
 
 func surface_spawn(x: int) -> Vector2:
 	x = clampi(x, 2, W - 3)
-	# Escanea desde SKY_ROWS: las islas flotantes (más arriba) no
-	# cuentan como suelo de spawn.
-	for y in range(SKY_ROWS, H):
+	for y in H:
 		if SOLID.has(tiles.get(Vector2i(x, y), 0)):
 			return Vector2(x * TILE + TILE * 0.5, y * TILE - 40.0)
 	return Vector2(x * TILE, 100.0)
@@ -233,10 +175,6 @@ func receive_chunk(c: Vector2i, data: Dictionary) -> void:
 		tiles[coord] = data[coord]
 	_ensure_renderer(c)
 	renderers[c].queue_redraw()
-	# El chunk de abajo mira ESTOS tiles para decidir su césped: refrescarlo
-	var below := c + Vector2i(0, 1)
-	if renderers.has(below):
-		renderers[below].queue_redraw()
 
 
 func _ensure_renderer(c: Vector2i) -> void:
@@ -257,94 +195,19 @@ func _redraw_at(coord: Vector2i) -> void:
 		renderers[c].queue_redraw()
 
 
-func _tile_center(coord: Vector2i) -> Vector2:
-	return Vector2(coord.x * TILE + TILE * 0.5, coord.y * TILE + TILE * 0.5)
-
-
 func _set_tile(coord: Vector2i, t: int) -> void:
-	var prev: int = tiles.get(coord, 0)
 	if t == 0:
 		tiles.erase(coord)
 	else:
 		tiles[coord] = t
 	damage_ratio.erase(coord)
 	_redraw_at(coord)
-	# El tile de ABAJO cambia de aspecto (césped si queda aire encima):
-	# si cae en otro chunk, redibujarlo también.
-	var below := coord + Vector2i.DOWN
-	if chunk_of(below) != chunk_of(coord):
-		_redraw_at(below)
-	# Partículas (solo visual)
-	if fx != null:
-		if t == 0 and prev != 0:
-			fx.burst(_tile_center(coord), Atlas.avg_color(prev), 14)
-		elif t != 0 and prev == 0:
-			fx.burst(_tile_center(coord), Atlas.avg_color(t), 6, 70.0)
 
 
-# -------------------------------------------------------------
-# FONDO (Fase 5B): cielo con degradado, sol, nubes a la deriva,
-# colinas en dos planos y subsuelo oscuro. Los chunks (hijos)
-# dibujan los tiles encima.
-# -------------------------------------------------------------
 func _draw() -> void:
-	var ww := W * TILE
-	var ground_y := (SKY_ROWS + 9) * TILE   # donde empieza el subsuelo de fondo
-	var dl := daylight()
-	var ph := day_phase()
-	draw_texture_rect(Atlas.sky_tex, Rect2(0, 0, ww, ground_y), false)
-
-	# Estrellas titilantes (aparecen al anochecer)
-	if dl < 0.85:
-		var sa := 1.0 - dl
-		for i in 70:
-			var sx := Atlas._h(i, 0, 201) * ww
-			var sy := Atlas._h(i, 1, 202) * (SKY_ROWS - 4) * TILE
-			var tw := 0.5 + 0.5 * sin(_cloud_t * (1.0 + 2.0 * Atlas._h(i, 2, 203)) + i)
-			draw_circle(Vector2(sx, sy), 1.5, Color(1, 1, 0.92, sa * (0.35 + 0.5 * tw)))
-
-	# Sol de día / luna de noche, recorriendo el cielo en arco
-	if ph < 0.5:
-		var p := ph / 0.5
-		var sun := Vector2(ww * lerpf(0.06, 0.94, p), (8.5 - 6.5 * sin(PI * p)) * TILE)
-		draw_circle(sun, 46.0, Color(Atlas.C_SUN.r, Atlas.C_SUN.g, Atlas.C_SUN.b, 0.25))
-		draw_circle(sun, 30.0, Atlas.C_SUN)
-	else:
-		var p := (ph - 0.5) / 0.5
-		var moon := Vector2(ww * lerpf(0.06, 0.94, p), (8.5 - 6.5 * sin(PI * p)) * TILE)
-		draw_circle(moon, 34.0, Color(0.93, 0.95, 1.0, 0.18))
-		draw_circle(moon, 24.0, Color(0.88, 0.9, 0.98))
-		draw_circle(moon + Vector2(-7, -4), 4.0, Color(0.72, 0.75, 0.85))
-		draw_circle(moon + Vector2(6, 6), 3.0, Color(0.72, 0.75, 0.85))
-		draw_circle(moon + Vector2(8, -7), 2.5, Color(0.72, 0.75, 0.85))
-
-	# Nubes con deriva lenta (envuelven el mundo, se oscurecen de noche)
-	var cb := lerpf(0.4, 1.0, dl)
-	for i in 7:
-		var speed := 6.0 + 6.0 * Atlas._h(i, 0, 91)
-		var cw := 140.0 + 80.0 * Atlas._h(i, 1, 92)
-		var cx := wrapf(Atlas._h(i, 2, 93) * ww + _cloud_t * speed, -cw, ww)
-		var cy := (1.0 + 6.0 * Atlas._h(i, 3, 94)) * TILE
-		draw_texture_rect(Atlas.cloud_tex, Rect2(cx, cy, cw, cw * 0.29), false, Color(cb, cb, cb))
-
-	# Colinas lejanas (dos planos = sensación de profundidad)
-	_draw_hills(Atlas.hill_far_tex, (SKY_ROWS - 4) * TILE, 2.0, Atlas.C_HILL_FAR, ground_y)
-	_draw_hills(Atlas.hill_near_tex, (SKY_ROWS - 2) * TILE, 2.0, Atlas.C_HILL_NEAR, ground_y)
-
-	# Subsuelo: banda de transición y oscuridad
-	draw_texture_rect(Atlas.under_tex, Rect2(0, ground_y, ww, 8 * TILE), false)
-	draw_rect(Rect2(0, ground_y + 8 * TILE, ww, (H - SKY_ROWS - 17) * TILE), Atlas.C_UNDER_BOT)
-
-
-func _draw_hills(tex: Texture2D, top: float, sc: float, base: Color, fill_to: float) -> void:
-	var tw := tex.get_width() * sc
-	var th := tex.get_height() * sc
-	var x := 0.0
-	while x < W * TILE:
-		draw_texture_rect(tex, Rect2(x, top, tw, th), false)
-		x += tw
-	if top + th < fill_to:   # relleno sólido bajo la silueta
-		draw_rect(Rect2(0, top + th, W * TILE, fill_to - (top + th)), base)
+	# Fondo del mundo (los chunks dibujan los tiles encima)
+	draw_rect(Rect2(0, 0, W * TILE, SKY_ROWS * TILE), Color(0.45, 0.65, 0.95))
+	draw_rect(Rect2(0, SKY_ROWS * TILE, W * TILE, (H - SKY_ROWS) * TILE), Color(0.10, 0.09, 0.13))
 
 
 # -------------------------------------------------------------
@@ -387,8 +250,6 @@ func _do_hit(coord: Vector2i, miner_id: int) -> void:
 		damage[coord] = hp_left
 		damage_ratio[coord] = float(hp_left) / HP[t]
 		_redraw_at(coord)
-		if fx != null:
-			fx.burst(_tile_center(coord), Atlas.avg_color(t), 4, 90.0)
 		apply_damage.rpc(coord, damage_ratio[coord])
 
 
@@ -398,8 +259,6 @@ func apply_damage(coord: Vector2i, ratio: float) -> void:
 		return
 	damage_ratio[coord] = ratio
 	_redraw_at(coord)
-	if fx != null:
-		fx.burst(_tile_center(coord), Atlas.avg_color(tiles.get(coord, T_DIRT)), 4, 90.0)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -445,13 +304,10 @@ func _do_place(coord: Vector2i, item: String, placer_id: int) -> void:
 
 # -------------------------------------------------------------
 # EVENTO DEL MUNDO: METEORO (GDD §9)
-# El scheduler de main.gd (servidor) lo dispara periódicamente,
-# con aviso previo (pasa la x anunciada). Impacto = partículas
-# + sacudida de cámara en los peers cercanos (solo visual).
+# El scheduler de main.gd (servidor) lo dispara periódicamente.
 # -------------------------------------------------------------
-func meteor_strike(x: int = -1) -> Vector2i:
-	if x < 0:
-		x = randi_range(6, W - 7)
+func meteor_strike() -> Vector2i:
+	var x := randi_range(6, W - 7)
 	var sy := SKY_ROWS
 	for y in H:
 		if SOLID.has(tiles.get(Vector2i(x, y), 0)):
@@ -476,9 +332,6 @@ func meteor_strike(x: int = -1) -> Vector2i:
 		_set_tile(c, changes[c])
 		damage.erase(c)
 	apply_changes.rpc(changes)
-	var center := _tile_center(Vector2i(x, sy))
-	apply_meteor.rpc(center)
-	_meteor_fx(center)
 	return Vector2i(x, sy)
 
 
@@ -487,25 +340,6 @@ func apply_changes(changes: Dictionary) -> void:
 	for c: Vector2i in changes:
 		if is_loaded(chunk_of(c)):
 			_set_tile(c, changes[c])
-
-
-@rpc("authority", "call_remote", "reliable")
-func apply_meteor(center: Vector2) -> void:
-	_meteor_fx(center)
-
-
-## Explosión visual del meteoro + sacudida de cámara si el jugador
-## local está cerca. Puramente cosmético: no toca estado del juego.
-func _meteor_fx(center: Vector2) -> void:
-	if fx != null:
-		fx.burst(center, Color(1.0, 0.55, 0.2), 36, 320.0)
-		fx.burst(center, Color(0.4, 0.34, 0.3), 22, 180.0)
-		fx.ring(center, 150.0, Color(1.0, 0.6, 0.25))
-	var me: Node2D = get_parent().players.get(multiplayer.get_unique_id())
-	if me != null and me.has_method("shake"):
-		var d := me.position.distance_to(center)
-		if d < 1400.0:
-			me.shake(lerpf(14.0, 2.0, d / 1400.0))
 
 
 # -------------------------------------------------------------

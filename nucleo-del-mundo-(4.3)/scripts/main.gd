@@ -30,29 +30,15 @@ const SAVE_PATH := "user://nucleo_save.json.gz"
 
 const ITEM_NAMES := {"dirt": "Tierra", "stone": "Piedra", "wood": "Madera", "ore": "Mineral"}
 
-# GDD §8.1 — recetas: picos (minan), espadas (combate) y armaduras
-# (reducen daño). Los diccionarios *_DAMAGE/_REDUCTION van del mejor
-# al peor: el servidor usa el primero que el jugador tenga.
+# GDD §8.1 — recetas. El orden de TOOL_DAMAGE es del mejor al peor.
 const RECIPES := {
 	"pico_madera": {"nombre": "Pico de madera", "costo": {"wood": 8}},
 	"pico_piedra": {"nombre": "Pico de piedra", "costo": {"wood": 4, "stone": 12}},
 	"pico_dorado": {"nombre": "Pico dorado", "costo": {"wood": 4, "ore": 8}},
-	"espada_madera": {"nombre": "Espada de madera", "costo": {"wood": 10}},
-	"espada_piedra": {"nombre": "Espada de piedra", "costo": {"wood": 4, "stone": 16}},
-	"espada_dorada": {"nombre": "Espada dorada", "costo": {"wood": 4, "ore": 10}},
-	"armadura_madera": {"nombre": "Armadura de madera", "costo": {"wood": 20}},
-	"armadura_piedra": {"nombre": "Armadura de piedra", "costo": {"stone": 30}},
-	"armadura_dorada": {"nombre": "Armadura dorada", "costo": {"stone": 10, "ore": 15}},
 }
 const TOOL_DAMAGE := {"pico_dorado": 100, "pico_piedra": 60, "pico_madera": 35}
-const WEAPON_DAMAGE := {"espada_dorada": 60, "espada_piedra": 38, "espada_madera": 24}
-const ARMOR_REDUCTION := {"armadura_dorada": 6, "armadura_piedra": 4, "armadura_madera": 2}
+const TOOL_NAMES := {"pico_dorado": "Dorado", "pico_piedra": "Piedra", "pico_madera": "Madera"}
 const HAND_DAMAGE := 20
-const PLAYER_MAX_HP := 100
-const REGEN_EVERY := 4.0     # segundos entre ticks de regeneración de vida
-const REGEN_AMOUNT := 3      # vida recuperada por tick (solo servidor)
-const METEOR_WARN := 3.0     # segundos de aviso antes del impacto del meteoro
-const TOAST_LIFE := 4.5      # segundos visibles del toast antes de desvanecerse
 
 # MONETIZACIÓN — catálogo de skins (solo cosmético, nunca pay-to-win).
 # El SERVIDOR valida compra/equipamiento (§16); el cliente solo pide.
@@ -75,7 +61,7 @@ const SKINS := {
 	"arcoiris": {"nombre": "Arcoíris", "precio": 150,
 		"cuerpo": Color.WHITE, "borde": Color.WHITE, "anim": true},
 }
-# Núcleos por matar slimes: ver npc_manager.KINDS (varía por variante)
+const COIN_SLIME := 3        # Núcleos por matar un slime
 const COIN_ORE := 2          # Núcleos por minar un tile de mineral
 
 var world: Node2D = null
@@ -91,8 +77,7 @@ var peer_names: Dictionary = {}     # peer_id -> nombre        (SOLO servidor)
 var my_name := "Jugador"
 
 var _my_inv: Dictionary = {}
-var _inv_init := false              # evita textos flotantes en la primera sincronización
-var _my_hp := PLAYER_MAX_HP
+var _my_hp := 100
 var _my_coins := 0
 var _my_skins: Array = ["default"]
 var _my_skin := "default"
@@ -100,30 +85,17 @@ var _profile_init := false          # evita sonidos en la primera sincronizació
 var _stream_t := 0.0
 var _save_t := 0.0
 var _meteor_t := 90.0
-var _meteor_x := -1                 # x anunciada del meteoro (-1 = ninguno pendiente)
-var _meteor_warn_t := 0.0
-var _invasion_t := 150.0
-var _regen_t := 0.0
-var _toast_life := 0.0
 
 var _ui: CanvasLayer
 var _menu: PanelContainer
 var _status: Label
-var _toast_panel: PanelContainer = null
-var _hp_panel: Control = null
-var _low_hp: Panel = null           # borde rojo pulsante con vida baja
 var _ip_input: LineEdit
 var _name_input: LineEdit
 var _slot_buttons: Dictionary = {}
 var _info: Label
-var _hp_bar: ProgressBar = null
-var _hp_label: Label = null
-var _tool_label: Label = null
-var _armor_label: Label = null
 var _hud_box: Control = null
 var _craft_btn: Control = null
 var _craft_panel: Control = null
-var _craft_rows: Dictionary = {}    # recipe_id -> {label, button}
 var _shop_btn: Control = null
 var _shop_panel: Control = null
 var _shop_title: Label = null
@@ -135,7 +107,7 @@ func _ready() -> void:
 	Net.player_connected.connect(_on_player_connected)
 	Net.player_disconnected.connect(_on_player_disconnected)
 	Net.connection_succeeded.connect(_on_connected_to_host)
-	Net.connection_failed.connect(func(): _show_toast("❌ No se pudo conectar al host"))
+	Net.connection_failed.connect(func(): _status.text = "❌ No se pudo conectar al host")
 	Net.server_disconnected.connect(_on_host_lost)
 
 	# ---- MODO SERVIDOR DEDICADO (GDD §1.2) ----
@@ -158,24 +130,8 @@ func _ready() -> void:
 # SCHEDULER (GDD §9): streaming, autosave y eventos del mundo
 # -------------------------------------------------------------
 func _process(delta: float) -> void:
-	# Desvanecido del toast (solo visual, corre también en el lobby)
-	if _toast_life > 0.0 and not _menu.visible:
-		_toast_life -= delta
-		if _toast_life <= 0.0:
-			_toast_panel.hide()
-		elif _toast_life < 0.8:
-			_toast_panel.modulate.a = _toast_life / 0.8
-
 	if world == null:
 		return
-
-	# Borde rojo pulsante con vida baja (solo visual)
-	if _low_hp != null:
-		if _my_hp < 30:
-			_low_hp.visible = true
-			_low_hp.modulate.a = 0.45 + 0.25 * sin(Time.get_ticks_msec() / 180.0)
-		else:
-			_low_hp.visible = false
 
 	_stream_t += delta
 	if _stream_t >= 0.4:
@@ -189,34 +145,13 @@ func _process(delta: float) -> void:
 		if _save_t >= 60.0:
 			_save_t = 0.0
 			save_game()
-
-		# Regeneración de vida lenta (solo servidor)
-		_regen_t += delta
-		if _regen_t >= REGEN_EVERY:
-			_regen_t = 0.0
-			_regen_tick()
-
-		# Meteoro (GDD §9): primero un aviso, luego el impacto
 		_meteor_t -= delta
-		if _meteor_t <= 0.0 and _meteor_x < 0:
+		if _meteor_t <= 0.0:
 			_meteor_t = randf_range(70.0, 120.0)
-			_meteor_x = randi_range(6, world.W - 7)
-			_meteor_warn_t = METEOR_WARN
-			_broadcast_toast("☄️ ¡Meteoro inminente cerca de x=%d! Aléjate" % _meteor_x)
-		if _meteor_x >= 0:
-			_meteor_warn_t -= delta
-			if _meteor_warn_t <= 0.0:
-				var where: Vector2i = world.meteor_strike(_meteor_x)
-				_meteor_x = -1
-				_broadcast_toast("☄️ ¡Impacto! El meteoro dejó mineral en x=%d" % where.x)
-
-		# Invasión de slimes (GDD §9): ola cerca de un jugador al azar
-		_invasion_t -= delta
-		if _invasion_t <= 0.0:
-			_invasion_t = randf_range(150.0, 240.0)
-			var npcs_node: Node2D = get_node_or_null("NPCs")
-			if npcs_node != null and npcs_node.spawn_wave():
-				_broadcast_toast("👾 ¡Invasión de slimes! Defiéndete")
+			var where: Vector2i = world.meteor_strike()
+			var msg := "☄️ ¡Meteoro! Cayó cerca de x=%d — dejó mineral" % where.x
+			show_toast.rpc(msg)
+			_show_toast(msg)
 
 
 func _notification(what: int) -> void:
@@ -231,37 +166,37 @@ func _notification(what: int) -> void:
 func _host(load_save: bool) -> void:
 	my_name = _read_name()
 	if Net.host_game() != OK:
-		_show_toast("❌ Error al crear la partida (¿puerto ocupado?)")
+		_status.text = "❌ Error al crear la partida (¿puerto ocupado?)"
 		return
 	_start_game()
 	if not (load_save and load_game()):
 		world.generate()
 	inventories[1] = inventories.get(1, {})
-	player_hp[1] = PLAYER_MAX_HP
+	player_hp[1] = 100
 	peer_names[1] = my_name
 	var prof := _profile_for(my_name)
 	_spawn_player(1, world.surface_spawn(randi_range(4, world.W - 5)), str(prof.skin), my_name)
 	_apply_inventory(inventories[1])
 	_apply_profile(prof)
-	_show_toast("🟢 Partida creada — comparte tu IP: %s" % Net.local_ip())
+	_status.text = "🟢 Partida creada — comparte tu IP: %s" % Net.local_ip()
 
 
 func _on_join_pressed() -> void:
 	my_name = _read_name()
 	var ip := _ip_input.text.strip_edges()
 	if ip.is_empty():
-		_show_toast("Escribe la IP del host")
+		_status.text = "Escribe la IP del host"
 		return
 	if Net.join_game(ip) != OK:
-		_show_toast("❌ Dirección inválida")
+		_status.text = "❌ Dirección inválida"
 		return
-	_show_toast("Conectando a %s..." % ip)
+	_status.text = "Conectando a %s..." % ip
 
 
 func _on_connected_to_host() -> void:
 	_start_game()
 	request_join.rpc_id(1, my_name)
-	_show_toast("🟢 Conectado")
+	_status.text = "🟢 Conectado"
 
 
 func _read_name() -> String:
@@ -302,7 +237,7 @@ func request_join(nombre: String) -> void:
 	peer_names[new_id] = nombre
 	var prof := _profile_for(nombre)
 	inventories[new_id] = {}
-	player_hp[new_id] = PLAYER_MAX_HP
+	player_hp[new_id] = 100
 
 	for pid: int in players:
 		spawn_player_remote.rpc_id(new_id, pid, players[pid].position, _skin_of(pid), _name_of(pid))
@@ -366,24 +301,6 @@ func get_tool_damage(peer_id: int) -> int:
 	return HAND_DAMAGE
 
 
-## Daño de ataque contra NPCs: la mejor espada, o los puños.
-func get_attack_damage(peer_id: int) -> int:
-	var inv: Dictionary = inventories.get(peer_id, {})
-	for wpn: String in WEAPON_DAMAGE:
-		if int(inv.get(wpn, 0)) > 0:
-			return WEAPON_DAMAGE[wpn]
-	return HAND_DAMAGE
-
-
-## Reducción de daño de la mejor armadura del jugador.
-func get_armor_reduction(peer_id: int) -> int:
-	var inv: Dictionary = inventories.get(peer_id, {})
-	for arm: String in ARMOR_REDUCTION:
-		if int(inv.get(arm, 0)) > 0:
-			return ARMOR_REDUCTION[arm]
-	return 0
-
-
 func _push_inventory(peer_id: int) -> void:
 	if peer_id == 1:
 		if not dedicated:
@@ -398,23 +315,10 @@ func update_inventory(inv: Dictionary) -> void:
 
 
 func _apply_inventory(inv: Dictionary) -> void:
-	# "+N material" flotando sobre el jugador (solo visual)
-	if _inv_init and world != null and world.fx != null:
-		var me: Node2D = players.get(multiplayer.get_unique_id())
-		if me != null:
-			var k := 0
-			for item: String in ITEM_NAMES:
-				var d := int(inv.get(item, 0)) - int(_my_inv.get(item, 0))
-				if d > 0:
-					world.fx.float_text(me.position + Vector2(0, -36.0 - k * 16.0),
-						"+%d %s" % [d, ITEM_NAMES[item]], Color(1, 1, 1))
-					k += 1
-	_inv_init = true
 	_my_inv = inv
 	for item: String in _slot_buttons:
 		_slot_buttons[item].text = "%s\n%d" % [ITEM_NAMES[item], int(inv.get(item, 0))]
 	_refresh_info()
-	_refresh_craft()
 
 
 # -------------------------------------------------------------
@@ -438,9 +342,6 @@ func _do_craft(recipe_id: String, peer_id: int) -> void:
 	if not RECIPES.has(recipe_id):
 		return
 	var inv: Dictionary = inventories.get(peer_id, {})
-	if int(inv.get(recipe_id, 0)) > 0:
-		_toast_to(peer_id, "Ya tienes: %s" % RECIPES[recipe_id].nombre)
-		return
 	var costo: Dictionary = RECIPES[recipe_id].costo
 	for item: String in costo:
 		if int(inv.get(item, 0)) < int(costo[item]):
@@ -571,11 +472,6 @@ func _apply_profile(prof: Dictionary) -> void:
 	if _profile_init:
 		if coins > _my_coins:
 			Sfx.play("moneda")
-			var me: Node2D = players.get(multiplayer.get_unique_id())
-			if me != null and world != null and world.fx != null:
-				world.fx.burst(me.position + Vector2(0, -30), Color(0.95, 0.78, 0.2), 8, 110.0)
-				world.fx.float_text(me.position + Vector2(0, -56),
-					"+%d Núcleos" % (coins - _my_coins), Color(0.95, 0.8, 0.25))
 		if prof.skins.size() > _my_skins.size():
 			Sfx.play("compra")
 	_profile_init = true
@@ -594,10 +490,9 @@ func _apply_profile(prof: Dictionary) -> void:
 func damage_player(peer_id: int, dmg: int) -> void:
 	if not multiplayer.is_server() or not players.has(peer_id):
 		return
-	dmg = maxi(1, dmg - get_armor_reduction(peer_id))   # la armadura amortigua
-	var hp: int = player_hp.get(peer_id, PLAYER_MAX_HP) - dmg
+	var hp: int = player_hp.get(peer_id, 100) - dmg
 	if hp <= 0:
-		hp = PLAYER_MAX_HP
+		hp = 100
 		var pos: Vector2 = world.surface_spawn(randi_range(4, world.W - 5))
 		if peer_id == 1:
 			players[1].position = pos
@@ -629,26 +524,8 @@ func respawn_player(pos: Vector2) -> void:
 func _set_hp(hp: int) -> void:
 	if hp < _my_hp:
 		Sfx.play("dano")
-		var me: Node2D = players.get(multiplayer.get_unique_id())
-		if me != null and world != null and world.fx != null:
-			world.fx.burst(me.position, Color(0.9, 0.2, 0.2), 10, 150.0)
 	_my_hp = hp
 	_refresh_info()
-
-
-## Tick de regeneración (solo servidor): cura poco a poco a todos
-## los jugadores vivos hasta PLAYER_MAX_HP.
-func _regen_tick() -> void:
-	for pid: int in player_hp.keys():
-		var hp: int = player_hp[pid]
-		if hp >= PLAYER_MAX_HP or not players.has(pid):
-			continue
-		player_hp[pid] = mini(hp + REGEN_AMOUNT, PLAYER_MAX_HP)
-		if pid == 1:
-			if not dedicated:
-				_set_hp(player_hp[1])
-		else:
-			update_health.rpc_id(pid, player_hp[pid])
 
 
 # -------------------------------------------------------------
@@ -707,12 +584,6 @@ func _toast_to(peer_id: int, text: String) -> void:
 		show_toast.rpc_id(peer_id, text)
 
 
-## Aviso de evento del mundo: a todos los peers + al propio servidor.
-func _broadcast_toast(text: String) -> void:
-	show_toast.rpc(text)
-	_show_toast(text)
-
-
 @rpc("authority", "call_remote", "reliable")
 func show_toast(text: String) -> void:
 	_show_toast(text)
@@ -720,15 +591,8 @@ func show_toast(text: String) -> void:
 
 func _show_toast(text: String) -> void:
 	_status.text = text
-	_toast_panel.show()
-	_toast_panel.modulate.a = 1.0
-	_toast_life = TOAST_LIFE
 	if text.begins_with("☄️"):   # el aviso de meteoro llega a todos los peers
 		Sfx.play("meteoro")
-	elif text.begins_with("🛠️"):  # crafteo exitoso
-		Sfx.play("fabricar")
-	elif text.begins_with("👾"):  # invasión de slimes
-		Sfx.play("invasion")
 
 
 func _on_player_connected(id: int) -> void:
@@ -736,7 +600,7 @@ func _on_player_connected(id: int) -> void:
 		if dedicated:
 			print("[SERVIDOR] Jugador %d conectado" % id)
 		else:
-			_show_toast("🟢 Jugador %d conectado — IP del host: %s" % [id, Net.local_ip()])
+			_status.text = "🟢 Jugador %d conectado — IP del host: %s" % [id, Net.local_ip()]
 
 
 func _on_player_disconnected(id: int) -> void:
@@ -760,47 +624,23 @@ func _on_host_lost() -> void:
 # -------------------------------------------------------------
 ## El jugador ignora toques que caen sobre la interfaz.
 func is_point_on_ui(p: Vector2) -> bool:
-	for ctrl: Control in [_hud_box, _craft_btn, _craft_panel, _shop_btn, _shop_panel, _hp_panel, _toast_panel]:
+	for ctrl: Control in [_hud_box, _craft_btn, _craft_panel, _shop_btn, _shop_panel]:
 		if ctrl != null and ctrl.visible and ctrl.get_global_rect().has_point(p):
 			return true
 	return _menu.visible
-
-
-## Estilo común de paneles: fondo oscuro translúcido, bordes redondeados
-## y márgenes internos — legible sobre cualquier fondo del mundo.
-func _style_panel(p: PanelContainer, bg := Color(0.07, 0.08, 0.12, 0.92)) -> void:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.set_corner_radius_all(10)
-	sb.set_border_width_all(1)
-	sb.border_color = Color(1, 1, 1, 0.12)
-	sb.set_content_margin_all(14)
-	p.add_theme_stylebox_override("panel", sb)
 
 
 func _build_ui() -> void:
 	_ui = CanvasLayer.new()
 	add_child(_ui)
 
-	# Toast de avisos: arriba al CENTRO (no choca con la barra de vida)
-	_toast_panel = PanelContainer.new()
-	_toast_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_toast_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_toast_panel.grow_vertical = Control.GROW_DIRECTION_END
-	_toast_panel.position += Vector2(0, 8)
-	_style_panel(_toast_panel, Color(0.05, 0.06, 0.1, 0.85))
-	_toast_panel.hide()
-	_ui.add_child(_toast_panel)
-
 	_status = Label.new()
-	_status.add_theme_font_size_override("font_size", 17)
-	_toast_panel.add_child(_status)
+	_status.position = Vector2(12, 8)
+	_status.add_theme_font_size_override("font_size", 16)
+	_ui.add_child(_status)
 
 	_menu = PanelContainer.new()
 	_menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_menu.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_menu.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_style_panel(_menu)
 	_ui.add_child(_menu)
 
 	var box := VBoxContainer.new()
@@ -855,67 +695,9 @@ func _build_ui() -> void:
 
 
 func _show_hud() -> void:
-	# Aviso de vida baja: borde rojo pulsante en todo el viewport.
-	# MOUSE_FILTER_IGNORE y fuera de is_point_on_ui: no bloquea taps.
-	var lowhp := Panel.new()
-	lowhp.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	lowhp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var lsb := StyleBoxFlat.new()
-	lsb.draw_center = false
-	lsb.border_color = Color(0.85, 0.1, 0.1, 0.8)
-	lsb.set_border_width_all(14)
-	lowhp.add_theme_stylebox_override("panel", lsb)
-	lowhp.hide()
-	_ui.add_child(lowhp)
-	_low_hp = lowhp
-
 	var joy := Control.new()
 	joy.set_script(JoystickScript)
 	_ui.add_child(joy)
-
-	# --- Vida + herramienta equipada (arriba a la izquierda) ---
-	var hp_panel := PanelContainer.new()
-	hp_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	hp_panel.position += Vector2(12, 10)
-	_style_panel(hp_panel, Color(0.05, 0.06, 0.1, 0.75))
-	_ui.add_child(hp_panel)
-	_hp_panel = hp_panel
-
-	var status_box := VBoxContainer.new()
-	status_box.add_theme_constant_override("separation", 4)
-	hp_panel.add_child(status_box)
-
-	var hp_row := HBoxContainer.new()
-	hp_row.add_theme_constant_override("separation", 8)
-	status_box.add_child(hp_row)
-
-	var hp_icon := Label.new()
-	hp_icon.text = "❤"
-	hp_icon.add_theme_font_size_override("font_size", 20)
-	hp_row.add_child(hp_icon)
-
-	_hp_bar = ProgressBar.new()
-	_hp_bar.custom_minimum_size = Vector2(160, 22)
-	_hp_bar.min_value = 0
-	_hp_bar.max_value = PLAYER_MAX_HP
-	_hp_bar.show_percentage = false
-	var hp_fill := StyleBoxFlat.new()
-	hp_fill.bg_color = Color("d6453f")
-	hp_fill.set_corner_radius_all(4)
-	_hp_bar.add_theme_stylebox_override("fill", hp_fill)
-	hp_row.add_child(_hp_bar)
-
-	_hp_label = Label.new()
-	_hp_label.add_theme_font_size_override("font_size", 14)
-	hp_row.add_child(_hp_label)
-
-	_tool_label = Label.new()
-	_tool_label.add_theme_font_size_override("font_size", 16)
-	status_box.add_child(_tool_label)
-
-	_armor_label = Label.new()
-	_armor_label.add_theme_font_size_override("font_size", 16)
-	status_box.add_child(_armor_label)
 
 	# --- Inventario + info (abajo a la derecha) ---
 	var hud := VBoxContainer.new()
@@ -957,10 +739,7 @@ func _show_hud() -> void:
 
 	var panel := PanelContainer.new()
 	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	panel.position += Vector2(-12, 0)
-	_style_panel(panel)
 	panel.hide()
 	_ui.add_child(panel)
 	_craft_panel = panel
@@ -971,7 +750,7 @@ func _show_hud() -> void:
 	panel.add_child(pbox)
 
 	var ptitle := Label.new()
-	ptitle.text = "🛠️ Fabricación de picos"
+	ptitle.text = "Recetas (GDD §8)"
 	ptitle.add_theme_font_size_override("font_size", 18)
 	pbox.add_child(ptitle)
 
@@ -980,7 +759,11 @@ func _show_hud() -> void:
 		row.add_theme_constant_override("separation", 12)
 		pbox.add_child(row)
 
+		var costs := []
+		for item: String in RECIPES[rid].costo:
+			costs.append("%d %s" % [RECIPES[rid].costo[item], ITEM_NAMES[item].to_lower()])
 		var lbl := Label.new()
+		lbl.text = "%s — %s" % [RECIPES[rid].nombre, ", ".join(costs)]
 		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(lbl)
 
@@ -989,8 +772,6 @@ func _show_hud() -> void:
 		cbtn.custom_minimum_size = Vector2(84, 44)
 		cbtn.pressed.connect(func(): craft_local(rid))
 		row.add_child(cbtn)
-
-		_craft_rows[rid] = {"label": lbl, "button": cbtn}
 
 	# --- Botón y panel de la TIENDA de skins (MONETIZACIÓN) ---
 	var shop_btn := Button.new()
@@ -1004,9 +785,6 @@ func _show_hud() -> void:
 
 	var spanel := PanelContainer.new()
 	spanel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	spanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	spanel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_style_panel(spanel)
 	spanel.hide()
 	_ui.add_child(spanel)
 	_shop_panel = spanel
@@ -1043,7 +821,6 @@ func _show_hud() -> void:
 
 	_refresh_info()
 	_refresh_shop()
-	_refresh_craft()
 
 
 func _on_shop_pressed() -> void:
@@ -1075,50 +852,13 @@ func _refresh_shop() -> void:
 			b.disabled = int(SKINS[sid].precio) > _my_coins
 
 
-func _refresh_craft() -> void:
-	for rid: String in _craft_rows:
-		var costo: Dictionary = RECIPES[rid].costo
-		var partes := []
-		var alcanza := true
-		for item: String in costo:
-			var tengo := int(_my_inv.get(item, 0))
-			var necesito := int(costo[item])
-			if tengo < necesito:
-				alcanza = false
-			partes.append("%s %d/%d" % [ITEM_NAMES[item].to_lower(), tengo, necesito])
-		var tiene := int(_my_inv.get(rid, 0)) > 0
-		var row: Dictionary = _craft_rows[rid]
-		var lbl: Label = row.label
-		var btn: Button = row.button
-		lbl.text = "%s%s — %s" % ["✓ " if tiene else "", RECIPES[rid].nombre, ", ".join(partes)]
-		btn.disabled = tiene or not alcanza
-
-
 func _refresh_info() -> void:
-	if _info != null:
-		_info.text = "🪙 %d   |   Mineral: %d" % [_my_coins, int(_my_inv.get("ore", 0))]
-	_refresh_status()
-
-
-func _refresh_status() -> void:
-	if _hp_bar == null:
+	if _info == null:
 		return
-	_hp_bar.value = _my_hp
-	_hp_label.text = "%d/%d" % [_my_hp, PLAYER_MAX_HP]
 	var tool_name := "Mano"
 	for t: String in TOOL_DAMAGE:
 		if int(_my_inv.get(t, 0)) > 0:
-			tool_name = RECIPES[t].nombre
+			tool_name = TOOL_NAMES[t]
 			break
-	var weapon_name := "Puños"
-	for wpn: String in WEAPON_DAMAGE:
-		if int(_my_inv.get(wpn, 0)) > 0:
-			weapon_name = RECIPES[wpn].nombre
-			break
-	var armor_name := "Sin armadura"
-	for arm: String in ARMOR_REDUCTION:
-		if int(_my_inv.get(arm, 0)) > 0:
-			armor_name = RECIPES[arm].nombre
-			break
-	_tool_label.text = "⛏ %s   ⚔ %s" % [tool_name, weapon_name]
-	_armor_label.text = "🛡 %s" % armor_name
+	_info.text = "🪙 %d   |   ❤ %d   |   ⛏ Pico: %s   |   Mineral: %d" % [
+		_my_coins, _my_hp, tool_name, int(_my_inv.get("ore", 0))]

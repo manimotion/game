@@ -28,15 +28,9 @@ var player_name := ""
 var velocity := Vector2.ZERO
 var on_floor := false
 var _skin_t := 0.0               # reloj de la animación de skins "anim"
-var _anim_t := 0.0               # reloj del ciclo de caminata
-var _face := 1.0                 # 1 = derecha, -1 = izquierda
-var _vis_vel := Vector2.ZERO     # velocidad visual (remotos: estimada)
 
 var _world: Node2D
 var _joystick: Control
-var _cam: Camera2D = null
-var _shake := 0.0                # sacudida de cámara (solo visual)
-var _dust_t := 0.0               # cadencia del polvo al caminar (solo visual)
 var _target_pos := Vector2.ZERO
 var _sync_accum := 0.0
 var _last_sent := Vector2.INF
@@ -60,13 +54,7 @@ func _ready() -> void:
 		add_child(cam)
 		cam.make_current()
 		cam.reset_smoothing.call_deferred()
-		_cam = cam
 	queue_redraw()
-
-
-## Sacudida de cámara (meteoro y otros impactos). Solo cosmético.
-func shake(amount: float) -> void:
-	_shake = maxf(_shake, amount)
 
 
 func set_skin(id: String) -> void:
@@ -74,35 +62,17 @@ func set_skin(id: String) -> void:
 	queue_redraw()
 
 
-## Sprite por capas del Atlas (Fase 5B): el contorno y la camisa se
-## tiñen con los colores de la skin equipada — "default" usa el color
-## por jugador de siempre; "arcoiris" anima el tono.
 func _draw() -> void:
+	# Skin equipada (catálogo en main.gd). "default" = color por jugador.
 	var s: Dictionary = get_parent().SKINS.get(skin_id, get_parent().SKINS["default"])
-	var cuerpo: Color = color if skin_id == "default" else s.cuerpo
+	var body: Color = color if skin_id == "default" else s.cuerpo
 	if bool(s.anim):
-		cuerpo = Color.from_hsv(fmod(_skin_t * 0.45, 1.0), 0.85, 0.95)
-
-	# Frame según el movimiento visual: salto > caminar > reposo
-	var f: Dictionary
-	if absf(_vis_vel.y) > 60.0:
-		f = Atlas.player_frames.jump[0]
-	elif absf(_vis_vel.x) > 25.0:
-		f = Atlas.player_frames.walk[int(_anim_t * 9.0) % 4]
-	else:
-		f = Atlas.player_frames.idle[0]
-
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2(_face, 1.0))
+		body = Color.from_hsv(fmod(_skin_t * 0.45, 1.0), 0.85, 0.95)
 	var r := Rect2(-SIZE * 0.5, SIZE)
-	draw_texture_rect(f.outline, r, false, s.borde)
-	draw_texture_rect(f.base, r, false)
-	draw_texture_rect(f.shirt, r, false, cuerpo)
-	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-
-	# Nombre con sombra (legible sobre cualquier fondo)
+	draw_rect(r, body)
+	draw_rect(r, s.borde, false, 2.0)
+	draw_circle(Vector2(0, -SIZE.y * 0.5 + 10), 5, s.borde)
 	var etiqueta: String = player_name if player_name != "" else "P%d" % peer_id
-	draw_string(ThemeDB.fallback_font, Vector2(-59, -SIZE.y * 0.5 - 7), etiqueta,
-		HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color(0, 0, 0, 0.6))
 	draw_string(ThemeDB.fallback_font, Vector2(-60, -SIZE.y * 0.5 - 8), etiqueta,
 		HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color.WHITE)
 
@@ -111,24 +81,11 @@ func _process(delta: float) -> void:
 	var s: Dictionary = get_parent().SKINS.get(skin_id, {})
 	if bool(s.get("anim", false)):
 		_skin_t += delta
+		queue_redraw()
 	if is_multiplayer_authority():
 		_process_local(delta)
-		_vis_vel = velocity
-		if _cam != null:
-			if _shake > 0.4:
-				_shake = maxf(0.0, _shake - 26.0 * delta)
-				_cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * _shake
-			else:
-				_cam.offset = Vector2.ZERO
 	else:
-		var prev := position
 		position = position.lerp(_target_pos, minf(1.0, 14.0 * delta))
-		if delta > 0.0:   # velocidad estimada para animar a los remotos
-			_vis_vel = _vis_vel.lerp((position - prev) / delta, 0.4)
-	if absf(_vis_vel.x) > 25.0:
-		_anim_t += delta
-		_face = 1.0 if _vis_vel.x >= 0.0 else -1.0
-	queue_redraw()
 
 
 # -------------------------------------------------------------
@@ -156,21 +113,9 @@ func _process_local(delta: float) -> void:
 	on_floor = false
 	position.x += velocity.x * delta
 	_resolve_collisions(0)
-	var fall_v := velocity.y
 	position.y += velocity.y * delta
 	_resolve_collisions(1)
 	_clamp_to_world()
-
-	# Polvo al aterrizar y al caminar (solo visual)
-	if _world.fx != null:
-		var feet := position + Vector2(0, SIZE.y * 0.5)
-		if on_floor and fall_v > 420.0:
-			_world.fx.burst(feet, Color(0.55, 0.45, 0.35), 8, 90.0)
-		elif on_floor and absf(velocity.x) > 120.0:
-			_dust_t -= delta
-			if _dust_t <= 0.0:
-				_dust_t = 0.18
-				_world.fx.burst(feet - Vector2(signf(velocity.x) * 6.0, 0), Color(0.55, 0.45, 0.35), 2, 40.0)
 
 	_process_hold_mining()
 

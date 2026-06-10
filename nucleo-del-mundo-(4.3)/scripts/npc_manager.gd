@@ -1,44 +1,30 @@
 # =============================================================
 # npc_manager.gd — NPCs con FSM (GDD §12) — FASE 4
 # El SERVIDOR simula todos los NPCs (física + IA) y transmite un
-# snapshot (pos, variante, vida) a 10 Hz. Los clientes solo dibujan.
+# snapshot de posiciones a 10 Hz. Los clientes solo dibujan.
 # FSM del slime: idle → wander → chase (persigue al jugador
 # cercano saltando hacia él). Contacto = daño al jugador.
-# Golpearlo (tap) lo daña según tu pico; al morir suelta botín
-# según su variante (KINDS) y estalla en partículas.
-# Evento invasión (GDD §9): spawn_wave() crea una ola cerca de
-# un jugador — lo dispara el scheduler de main.gd.
+# Golpearlo (tap) lo daña según tu pico; al morir suelta mineral.
 # =============================================================
 extends Node2D
 
 const SIZE := Vector2(26, 20)
 const GRAVITY := 1500.0
 const MAX_FALL := 900.0
-const MAX_NPCS := 8
-const WAVE_CAP := 14           # tope de NPCs contando invasiones
+const MAX_NPCS := 5
+const NPC_HP := 70
 const CHASE_RANGE := 320.0
+const CONTACT_DMG := 8
 const CONTACT_COOLDOWN := 0.8
 const HIT_REACH := 200.0
 const SPAWN_EVERY := 15.0
 
-# Variantes de slime: stats + botín + tamaño visual (la colisión
-# usa SIZE para todas — solo cambia el dibujo).
-const KINDS := {
-	"normal": {"hp": 70, "dmg": 8, "speed": 115.0, "coins": 3, "ore": 1,
-		"w": 34.0, "h": 26.0, "color": Color("3fae4a")},
-	"grande": {"hp": 160, "dmg": 14, "speed": 80.0, "coins": 8, "ore": 2,
-		"w": 52.0, "h": 40.0, "color": Color("8a4ad0")},
-	"dorado": {"hp": 60, "dmg": 5, "speed": 165.0, "coins": 15, "ore": 0,
-		"w": 30.0, "h": 24.0, "color": Color("f0c040")},
-}
-
-# Servidor: id -> {pos, vel, hp, kind, cool, jump_t}
-# Clientes: id -> {pos, kind, ratio}
+# Servidor: id -> {pos, vel, hp, cool, jump_t}
+# Clientes: id -> {pos}
 var npcs: Dictionary = {}
 var _next_id := 1
 var _spawn_t := 6.0
 var _sync_t := 0.0
-var _vis: Dictionary = {}     # id -> {prev, vy} (squash visual, Fase 5B)
 
 @onready var main: Node2D = get_parent()
 
@@ -51,52 +37,18 @@ func _process(delta: float) -> void:
 			_sync_t = 0.0
 			var snap := {}
 			for id: int in npcs:
-				snap[id] = [npcs[id].pos, npcs[id].kind, _ratio_of(npcs[id])]
+				snap[id] = npcs[id].pos
 			sync_npcs.rpc(snap)
-	# Velocidad vertical estimada por peer (anima el squash sin red extra)
-	for id: int in npcs:
-		var v: Dictionary = _vis.get(id, {"prev": npcs[id].pos, "vy": 0.0})
-		if delta > 0.0:
-			v.vy = lerpf(v.vy, (npcs[id].pos.y - v.prev.y) / delta, 0.35)
-		v.prev = npcs[id].pos
-		_vis[id] = v
-	for id: int in _vis.keys():
-		if not npcs.has(id):
-			_vis.erase(id)
 	if not npcs.is_empty():
 		queue_redraw()
 
 
-func _kind_of(n: Dictionary) -> Dictionary:
-	return KINDS.get(n.get("kind", "normal"), KINDS["normal"])
-
-
-## Vida 0..1: el servidor la calcula de hp; los clientes la reciben en el snapshot.
-func _ratio_of(n: Dictionary) -> float:
-	if n.has("hp"):
-		return clampf(float(n.hp) / float(_kind_of(n).hp), 0.0, 1.0)
-	return float(n.get("ratio", 1.0))
-
-
 func _draw() -> void:
-	# Slime gelatinoso: se estira al saltar/caer y se aplasta al tocar suelo.
-	# Tamaño y textura según la variante; barra de vida si está dañado.
 	for id: int in npcs:
-		var n: Dictionary = npcs[id]
-		var k := _kind_of(n)
-		var p: Vector2 = n.pos
-		var vy: float = _vis.get(id, {}).get("vy", 0.0)
-		var stretch := clampf(absf(vy) / 700.0, 0.0, 0.30)
-		var w: float = float(k.w) * (1.0 - stretch * 0.6)
-		var h: float = float(k.h) * (1.0 + stretch)
-		var tex: Texture2D = Atlas.slimes.get(n.get("kind", "normal"), Atlas.slimes["normal"])
-		draw_texture_rect(tex, Rect2(p.x - w * 0.5, p.y + 10.0 - h, w, h), false)
-		var ratio := _ratio_of(n)
-		if ratio < 1.0:
-			var bw: float = float(k.w)
-			var by: float = p.y + 10.0 - float(k.h) - 8.0
-			draw_rect(Rect2(p.x - bw * 0.5, by, bw, 4.0), Color(0, 0, 0, 0.55))
-			draw_rect(Rect2(p.x - bw * 0.5, by, bw * ratio, 4.0), Color(0.85, 0.25, 0.2))
+		var p: Vector2 = npcs[id].pos
+		draw_circle(p + Vector2(0, 2), 13.0, Color(0.25, 0.75, 0.30, 0.9))
+		draw_circle(p + Vector2(-4, -2), 2.5, Color.BLACK)
+		draw_circle(p + Vector2(4, -2), 2.5, Color.BLACK)
 
 
 # -------------------------------------------------------------
@@ -131,7 +83,7 @@ func _simulate(delta: float) -> void:
 			n.jump_t = randf_range(0.8, 1.6)
 			n.vel.y = -430.0
 			if target != null and best < CHASE_RANGE:
-				n.vel.x = signf(target.position.x - n.pos.x) * float(_kind_of(n).speed)
+				n.vel.x = signf(target.position.x - n.pos.x) * 115.0
 			else:
 				n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
 
@@ -145,47 +97,21 @@ func _simulate(delta: float) -> void:
 				var prect := Rect2(p.position - p.SIZE * 0.5, p.SIZE)
 				if prect.intersects(Rect2(n.pos - SIZE * 0.5, SIZE)):
 					n.cool = CONTACT_COOLDOWN
-					main.damage_player(pid, int(_kind_of(n).dmg))
+					main.damage_player(pid, CONTACT_DMG)
 					break
 
 
 func _try_spawn() -> void:
 	if npcs.size() >= MAX_NPCS or main.players.is_empty() or main.world == null:
 		return
-	_spawn_one(_roll_kind(), main.players.values().pick_random())
-
-
-func _roll_kind() -> String:
-	var r := randf()
-	if r < 0.06:
-		return "dorado"
-	if r < 0.22:
-		return "grande"
-	return "normal"
-
-
-func _spawn_one(kind: String, near: Node2D) -> void:
 	var w: Node2D = main.world
-	var x := clampi(floori(near.position.x / w.TILE) + randi_range(-12, 12), 2, w.W - 3)
+	var p: Node2D = main.players.values().pick_random()
+	var x := clampi(floori(p.position.x / w.TILE) + randi_range(-12, 12), 2, w.W - 3)
 	var pos: Vector2 = w.surface_spawn(x)
 	pos.y -= 4.0
-	npcs[_next_id] = {"pos": pos, "vel": Vector2.ZERO, "hp": int(KINDS[kind].hp),
-		"kind": kind, "cool": 0.0, "jump_t": randf_range(0.0, 1.0)}
+	npcs[_next_id] = {"pos": pos, "vel": Vector2.ZERO, "hp": NPC_HP,
+		"cool": 0.0, "jump_t": randf_range(0.0, 1.0)}
 	_next_id += 1
-
-
-## Evento invasión (GDD §9): ola de 4 slimes (uno grande garantizado)
-## cerca de un jugador al azar. Lo dispara el scheduler de main.gd.
-func spawn_wave() -> bool:
-	if not multiplayer.is_server() or main.players.is_empty() or main.world == null:
-		return false
-	if npcs.size() >= WAVE_CAP:
-		return false
-	var near: Node2D = main.players.values().pick_random()
-	_spawn_one("grande", near)
-	for i in 3:
-		_spawn_one(_roll_kind(), near)
-	return true
 
 
 # -------------------------------------------------------------
@@ -263,35 +189,20 @@ func _do_hit(id: int, attacker: int) -> void:
 	var p: Node2D = main.players.get(attacker)
 	if p == null or p.position.distance_to(npcs[id].pos) > HIT_REACH:
 		return
-	npcs[id].hp -= main.get_attack_damage(attacker)   # espada, no pico
+	npcs[id].hp -= main.get_tool_damage(attacker)
 	if npcs[id].hp <= 0:
-		var k := _kind_of(npcs[id])
-		if main.world != null and main.world.fx != null:
-			main.world.fx.burst(npcs[id].pos, k.color, 16)
 		npcs.erase(id)
-		for i in int(k.ore):                  # botín según la variante (KINDS)
-			main.add_item(attacker, "ore")
-		main.add_coins(attacker, int(k.coins))   # MONETIZACIÓN: Núcleos
-	elif main.world != null and main.world.fx != null:
-		main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)   # flash de golpe
+		main.add_item(attacker, "ore")               # recompensa por slime
+		main.add_coins(attacker, main.COIN_SLIME)    # MONETIZACIÓN: Núcleos
 
 
 # -------------------------------------------------------------
-# RED: snapshot [pos, kind, ratio] (10 Hz) — los clientes
-# reemplazan su estado; los ids ausentes desaparecen (muertos)
-# y estallan en partículas (solo visual).
+# RED: snapshot de posiciones (10 Hz) — los clientes reemplazan
+# su estado; los ids ausentes desaparecen (muertos/despawn).
 # -------------------------------------------------------------
 @rpc("authority", "call_remote", "unreliable_ordered")
 func sync_npcs(snap: Dictionary) -> void:
 	var fresh := {}
 	for id: int in snap:
-		var s: Array = snap[id]
-		fresh[id] = {"pos": s[0], "kind": s[1], "ratio": s[2]}
-	for id: int in npcs:
-		if main.world == null or main.world.fx == null:
-			break
-		if not fresh.has(id):
-			main.world.fx.burst(npcs[id].pos, _kind_of(npcs[id]).color, 16)
-		elif float(fresh[id].ratio) < float(npcs[id].get("ratio", 1.0)) - 0.01:
-			main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)   # flash de golpe
+		fresh[id] = {"pos": snap[id]}
 	npcs = fresh

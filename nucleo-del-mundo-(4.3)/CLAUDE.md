@@ -14,16 +14,9 @@ godot --headless --path . --quit-after 2
 # Servidor dedicado
 godot --headless --path . -- --server
 
-# Smoke test headless (crafting, HUD, regen, invasión, meteoro) — exit code 0 = OK
-godot --headless --path . res://tests/smoke_craft.tscn --quit-after 10
-
 # Tests unitarios (cuando GUT esté instalado en addons/gut)
 godot --headless --path . -s addons/gut/gut_cmdln.gd -gdir=res://tests -gexit
 ```
-
-Los tests headless van como escena (`tests/*.tscn` + script `extends Node2D` con la lógica
-en `_ready()`): un `--script` pelado con `extends SceneTree` NO carga los autoloads
-(`Net`/`Sfx`/`Atlas`) y falla con "Identifier not found".
 
 El binario `godot` debe estar en el PATH. No hay paso de build: Godot interpreta los .gd.
 Las pruebas multijugador manuales se hacen desde el editor: Depurar → Ejecutar múltiples instancias.
@@ -61,29 +54,19 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
 ## Archivos
 
 - `scripts/network_manager.gd` — autoload `Net`. Host/join ENet, señales de conexión.
-- `scripts/sfx.gd` — autoload `Sfx`. SFX y música de fondo procedurales (WAV sintetizado
-  al arrancar; la música es un loop suave Am–F–C–G, omitida en headless). 100% local y
-  cosmético: nunca viaja por red ni toca estado del juego.
-- `scripts/main.gd` — lobby, HUD (barra de vida, herramienta equipada, toast central con
-  desvanecido), spawn, inventarios (servidor), crafting, vida/respawn + regeneración lenta,
-  persistencia (gzip JSON en `user://nucleo_save.json.gz`), scheduler (autosave, meteoro con
-  aviso previo, invasiones de slimes), modo `--server`. MONETIZACIÓN: catálogo `SKINS`,
-  Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles` (nombre → {coins, skins, skin})
-  persistidos en el save (v4).
-- `scripts/world.gd` — tiles, chunks/streaming, HP por tile, minado/colocación, generación
-  con cuevas (ruido 2D) e islas flotantes, ciclo día/noche visual (`daylight()`, usa la hora
-  del sistema — igual en todos los peers sin red), meteoro (FX de impacto + sacudida de
-  cámara), validaciones de alcance.
-- `scripts/fx.gd` — partículas, textos flotantes ("+N item"), anillos de impacto y ambiente
-  (luciérnagas/polen/polvo). 100% visual y local, nunca toca estado.
-- `scripts/player.gd` — física AABB, cámara (con `shake()`), input (joystick táctil +
-  teclado), combate.
-- `scripts/npc_manager.gd` — slimes FSM (idle/wander/chase) con 3 variantes en `KINDS`
-  (normal/grande/dorado: stats, botín, tamaño); ola de invasión vía `spawn_wave()`.
+- `scripts/sfx.gd` — autoload `Sfx`. SFX procedurales (WAV sintetizado al arrancar).
+  100% local y cosmético: nunca viaja por red ni toca estado del juego.
+- `scripts/main.gd` — lobby, HUD, spawn, inventarios (servidor), crafting, vida/respawn,
+  persistencia (gzip JSON en `user://nucleo_save.json.gz`), scheduler (autosave, meteoros),
+  modo `--server`. MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y
+  perfiles `profiles` (nombre → {coins, skins, skin}) persistidos en el save (v4).
+- `scripts/world.gd` — tiles, chunks/streaming, HP por tile, minado/colocación, meteoro,
+  validaciones de alcance.
+- `scripts/player.gd` — física AABB, cámara, input (joystick táctil + teclado), combate.
+- `scripts/npc_manager.gd` — slimes FSM (idle/wander/chase).
 - `scripts/virtual_joystick.gd` — joystick multi-touch; consume sus toques con
   `set_input_as_handled()` para no interferir con minar.
-- `scripts/chunk_renderer.gd` — dibujo por chunk con grietas de daño y decoración
-  de superficie (hierba alta/flores del Atlas, por hash de coordenada).
+- `scripts/chunk_renderer.gd` — dibujo por chunk con grietas de daño.
 
 La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de prototipo).
 `scenes/main.tscn` es mínimo a propósito.
@@ -93,10 +76,7 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 - GDScript tipado (`:=`, tipos en parámetros y retornos). Comentarios en español con
   referencia a la sección del GDD que implementan (ej. `# GDD §6`).
 - RPCs: `reliable` para acciones/estado, `unreliable_ordered` solo para posiciones.
-- Items son strings: materiales (`dirt`, `stone`, `wood`, `ore`) y equipo craftable
-  (`pico_*`, `espada_*`, `armadura_*` en madera/piedra/dorado — claves de `RECIPES`).
-  Picos minan (`TOOL_DAMAGE`), espadas pegan a NPCs (`WEAPON_DAMAGE`), armaduras
-  reducen daño recibido (`ARMOR_REDUCTION`); el servidor consulta el inventario real.
+- Items son strings: `dirt`, `stone`, `wood`, `ore`, `pico_madera`, `pico_piedra`, `pico_dorado`.
 - Skins son strings (claves de `SKINS` en main.gd). Los Núcleos NO son item de inventario:
   viven en el perfil (`profiles`) y solo el servidor los modifica (`add_coins`).
 - Las skins son SOLO cosméticas — nunca vender ventaja de juego (ver MONETIZACION.md).
@@ -117,10 +97,9 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 
 ## Roadmap pendiente (Fase 5+)
 
-1. ~~Arte~~ y ~~música~~ base ya están (atlas + sfx procedurales); falta pulir animaciones.
-2. Más variedad de mundo: biomas, estructuras, líquidos.
-3. Tests GUT para `world.gd` (generación, minado, alcance) y física del jugador
-   (el smoke test headless de `tests/smoke_craft.gd` ya cubre la lógica de servidor).
+1. Arte: sprites (atlas) en chunk_renderer y player en vez de rectángulos; animaciones.
+2. Música (los SFX básicos ya están en `sfx.gd`).
+3. Tests GUT para `world.gd` (generación, minado, alcance) y física del jugador.
 4. Backend: cuentas + matchmaking. Los `profiles` por nombre migran tal cual (misma
    estructura, la clave pasa de nombre a uid). Prerrequisito para cobrar dinero real.
 5. Validación de recibos de Google Play en el servidor + paquetes de Núcleos (MONETIZACION.md §3).
