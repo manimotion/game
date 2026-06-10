@@ -23,8 +23,11 @@ const MINE_REACH := 170.0
 
 var peer_id := 1
 var color := Color.WHITE
+var skin_id := "default"         # cosmético, lo fija el servidor (MONETIZACIÓN)
+var player_name := ""
 var velocity := Vector2.ZERO
 var on_floor := false
+var _skin_t := 0.0               # reloj de la animación de skins "anim"
 
 var _world: Node2D
 var _joystick: Control
@@ -54,16 +57,31 @@ func _ready() -> void:
 	queue_redraw()
 
 
+func set_skin(id: String) -> void:
+	skin_id = id
+	queue_redraw()
+
+
 func _draw() -> void:
+	# Skin equipada (catálogo en main.gd). "default" = color por jugador.
+	var s: Dictionary = get_parent().SKINS.get(skin_id, get_parent().SKINS["default"])
+	var body: Color = color if skin_id == "default" else s.cuerpo
+	if bool(s.anim):
+		body = Color.from_hsv(fmod(_skin_t * 0.45, 1.0), 0.85, 0.95)
 	var r := Rect2(-SIZE * 0.5, SIZE)
-	draw_rect(r, color)
-	draw_rect(r, Color.BLACK, false, 2.0)
-	draw_circle(Vector2(0, -SIZE.y * 0.5 + 10), 5, Color.BLACK)
-	draw_string(ThemeDB.fallback_font, Vector2(-30, -SIZE.y * 0.5 - 8), "P%d" % peer_id,
-		HORIZONTAL_ALIGNMENT_CENTER, 60, 14, Color.WHITE)
+	draw_rect(r, body)
+	draw_rect(r, s.borde, false, 2.0)
+	draw_circle(Vector2(0, -SIZE.y * 0.5 + 10), 5, s.borde)
+	var etiqueta: String = player_name if player_name != "" else "P%d" % peer_id
+	draw_string(ThemeDB.fallback_font, Vector2(-60, -SIZE.y * 0.5 - 8), etiqueta,
+		HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color.WHITE)
 
 
 func _process(delta: float) -> void:
+	var s: Dictionary = get_parent().SKINS.get(skin_id, {})
+	if bool(s.get("anim", false)):
+		_skin_t += delta
+		queue_redraw()
 	if is_multiplayer_authority():
 		_process_local(delta)
 	else:
@@ -178,6 +196,7 @@ func _process_hold_mining() -> void:
 				continue
 			var coord := Vector2i(floori(wp.x / _world.TILE), floori(wp.y / _world.TILE))
 			if _world.tiles.get(coord, 0) != 0:
+				Sfx.play("golpe")
 				_world.try_hit(coord)
 
 
@@ -193,16 +212,19 @@ func _tap_at(screen_pos: Vector2) -> void:
 	if npcs != null:
 		var nid: int = npcs.npc_at(wp)
 		if nid != -1:
+			Sfx.play("golpe")
 			npcs.hit_local(nid)
 			return
 
 	# 2) ¿Tile? Golpear. ¿Vacío? Colocar el bloque seleccionado.
 	var coord := Vector2i(floori(wp.x / _world.TILE), floori(wp.y / _world.TILE))
 	if _world.tiles.get(coord, 0) != 0:
+		Sfx.play("golpe")
 		_world.try_hit(coord)
 	else:
 		var main: Node = get_parent()
 		if main.selected_item != "":
+			Sfx.play("poner")
 			_world.try_place(coord, main.selected_item)
 
 

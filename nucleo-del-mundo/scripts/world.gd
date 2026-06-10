@@ -244,6 +244,8 @@ func _do_hit(coord: Vector2i, miner_id: int) -> void:
 		var drop: String = DROPS.get(t, "")
 		if drop != "":
 			get_parent().add_item(miner_id, drop)
+		if t == T_ORE:   # MONETIZACIÓN: el mineral también da Núcleos
+			get_parent().add_coins(miner_id, get_parent().COIN_ORE)
 	else:
 		damage[coord] = hp_left
 		damage_ratio[coord] = float(hp_left) / HP[t]

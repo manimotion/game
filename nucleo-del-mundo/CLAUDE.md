@@ -1,7 +1,9 @@
 # CLAUDE.md — Núcleo del Mundo
 
 Juego sandbox 2D multijugador (estilo Terraria) para Android, en **Godot 4.3+ / GDScript**.
-Basado en el GDD "Núcleo del Mundo". Estado actual: Fases 1-4 completadas.
+Basado en el GDD "Núcleo del Mundo". Estado actual: Fases 1-4 completadas + base de
+monetización de Fase 5 (Núcleos, tienda de skins, perfiles por nombre, SFX procedurales).
+El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
 
@@ -52,9 +54,12 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
 ## Archivos
 
 - `scripts/network_manager.gd` — autoload `Net`. Host/join ENet, señales de conexión.
+- `scripts/sfx.gd` — autoload `Sfx`. SFX procedurales (WAV sintetizado al arrancar).
+  100% local y cosmético: nunca viaja por red ni toca estado del juego.
 - `scripts/main.gd` — lobby, HUD, spawn, inventarios (servidor), crafting, vida/respawn,
   persistencia (gzip JSON en `user://nucleo_save.json.gz`), scheduler (autosave, meteoros),
-  modo `--server`.
+  modo `--server`. MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y
+  perfiles `profiles` (nombre → {coins, skins, skin}) persistidos en el save (v4).
 - `scripts/world.gd` — tiles, chunks/streaming, HP por tile, minado/colocación, meteoro,
   validaciones de alcance.
 - `scripts/player.gd` — física AABB, cámara, input (joystick táctil + teclado), combate.
@@ -72,6 +77,9 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
   referencia a la sección del GDD que implementan (ej. `# GDD §6`).
 - RPCs: `reliable` para acciones/estado, `unreliable_ordered` solo para posiciones.
 - Items son strings: `dirt`, `stone`, `wood`, `ore`, `pico_madera`, `pico_piedra`, `pico_dorado`.
+- Skins son strings (claves de `SKINS` en main.gd). Los Núcleos NO son item de inventario:
+  viven en el perfil (`profiles`) y solo el servidor los modifica (`add_coins`).
+- Las skins son SOLO cosméticas — nunca vender ventaja de juego (ver MONETIZACION.md).
 - Constantes de balance (HP, daños, costos) arriba de cada archivo — no hardcodear inline.
 - Diccionarios con claves `Vector2i` viajan bien por RPC; para JSON se serializan como `"x,y"`.
 
@@ -84,13 +92,17 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 - Los toques de UI: `player.gd` ignora taps sobre la interfaz vía `main.is_point_on_ui()`.
   Si agregas controles nuevos a la UI, inclúyelos ahí.
 - Tras editar la generación del mundo, borrar el save (`user://nucleo_save.json.gz`) para probar.
+- Los perfiles van por NOMBRE sin contraseña: en LAN cualquiera puede usar tu nombre y
+  gastar tus Núcleos. Aceptado hasta el backend de cuentas; NO cobrar dinero real antes.
 
 ## Roadmap pendiente (Fase 5+)
 
 1. Arte: sprites (atlas) en chunk_renderer y player en vez de rectángulos; animaciones.
-2. Sonido y música.
+2. Música (los SFX básicos ya están en `sfx.gd`).
 3. Tests GUT para `world.gd` (generación, minado, alcance) y física del jugador.
-4. Backend: cuentas + matchmaking (inventarios persistentes por jugador dependen de esto).
-5. Movimiento server-authoritative + predicción/reconciliación (GDD §10.2).
-6. Sistema de energía (§11), más NPCs, eventos adicionales (§9).
-7. Export Android firmado para Play Store.
+4. Backend: cuentas + matchmaking. Los `profiles` por nombre migran tal cual (misma
+   estructura, la clave pasa de nombre a uid). Prerrequisito para cobrar dinero real.
+5. Validación de recibos de Google Play en el servidor + paquetes de Núcleos (MONETIZACION.md §3).
+6. Movimiento server-authoritative + predicción/reconciliación (GDD §10.2).
+7. Sistema de energía (§11), más NPCs, eventos adicionales (§9).
+8. Export Android firmado (AAB) para Play Store.

@@ -192,7 +192,8 @@ func _do_hit(id: int, attacker: int) -> void:
 	npcs[id].hp -= main.get_tool_damage(attacker)
 	if npcs[id].hp <= 0:
 		npcs.erase(id)
-		main.add_item(attacker, "ore")   # recompensa por slime
+		main.add_item(attacker, "ore")               # recompensa por slime
+		main.add_coins(attacker, main.COIN_SLIME)    # MONETIZACIÓN: Núcleos
 
 
 # -------------------------------------------------------------
