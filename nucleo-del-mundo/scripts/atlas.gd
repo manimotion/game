@@ -25,6 +25,7 @@ const T_WALL := 7
 const T_CAMPFIRE := 8
 const T_SPIKES := 9
 const T_TOWER := 10
+const T_NEST := 11
 
 # ---- PALETA (tierras cálidas + verdes naturales, saturación contenida) ----
 const P_DIRT := Color("9b6a42")
@@ -58,6 +59,19 @@ const P_LOG_D := Color("3e2a14")
 const P_SPIKE := Color("c4c8d4")
 const P_SPIKE_D := Color("4a4a55")
 const P_SPIKE_L := Color("eef0f6")
+const P_NEST := Color("4a3a2e")
+const P_NEST_D := Color("332720")
+const P_NEST_L := Color("6b5240")
+const P_NEST_GLOW := Color("ff6a3c")
+const P_DRILL := Color("8a8f9b")
+const P_DRILL_D := Color("5a5f6b")
+const P_DRILL_BIT := Color("f0c040")
+const P_MOLE := Color("6b4a3a")
+const P_MOLE_D := Color("4a3226")
+const P_MOLE_CLAW := Color("e8e0d0")
+const P_RAM := Color("c46a3a")
+const P_RAM_D := Color("8a4422")
+const P_RAM_HORN := Color("e8e0d0")
 
 const C_SKY_TOP := Color("3e7fc9")
 const C_SKY_BOT := Color("a8d8f0")
@@ -151,7 +165,7 @@ var arrow_tex: ImageTexture    # proyectil de la torre de flechas (Fase 8)
 
 
 func _ready() -> void:
-	for t in [T_DIRT, T_STONE, T_ORE, T_BEDROCK, T_WOOD, T_LEAF, T_WALL, T_CAMPFIRE, T_SPIKES, T_TOWER]:
+	for t in [T_DIRT, T_STONE, T_ORE, T_BEDROCK, T_WOOD, T_LEAF, T_WALL, T_CAMPFIRE, T_SPIKES, T_TOWER, T_NEST]:
 		tiles[t] = []
 		for v in VARIANTS:
 			tiles[t].append(_make_tile(t, v))
@@ -175,9 +189,17 @@ func _ready() -> void:
 	# + el murciélago nocturno (Fase 6)
 	slimes["normal"] = _make_slime(Color("3fae4a"), Color("2c8338"), Color("8fe093"))
 	slimes["grande"] = _make_slime(Color("8a4ad0"), Color("5c2f96"), Color("c9a0f0"))
+	slimes["slime_mega"] = _make_slime(Color("4a2a70"), Color("301a4a"), Color("9a6ad0"))
 	slimes["dorado"] = _make_slime(P_GOLD, P_GOLD_D, P_GOLD_L)
 	slimes["murcielago"] = _make_bat()
 	slimes["jefe"] = _make_boss()
+	# Fase 10: nuevos enemigos (taladro, topo, embistedor) y jefes alternativos
+	slimes["taladro"] = _make_drill(P_DRILL, P_DRILL_D, P_DRILL_BIT)
+	slimes["topo"] = _make_mole(P_MOLE, P_MOLE_D, P_MOLE_CLAW)
+	slimes["embistedor"] = _make_charger(P_RAM, P_RAM_D, P_RAM_HORN)
+	slimes["jefe_murcielago"] = _make_boss(BOSS_PALETTE_BAT)
+	slimes["jefe_topo"] = _make_boss(BOSS_PALETTE_MOLE)
+	slimes["jefe_corredor"] = _make_boss(BOSS_PALETTE_RUNNER)
 	sky_tex = _make_gradient(C_SKY_TOP, C_SKY_BOT)
 	under_tex = _make_gradient(C_UNDER_TOP, C_UNDER_BOT)
 	cloud_tex = _make_cloud()
@@ -226,7 +248,7 @@ func _make_tile(t: int, v: int) -> ImageTexture:
 		for x in PX:
 			img.set_pixel(x, y, _tile_pixel(t, v, x, y))
 	match t:
-		T_DIRT, T_STONE, T_ORE, T_LEAF, T_WALL, T_TOWER:
+		T_DIRT, T_STONE, T_ORE, T_LEAF, T_WALL, T_TOWER, T_NEST:
 			_bevel(img)
 	# color promedio (para las partículas de minado)
 	for y in PX:
@@ -333,6 +355,19 @@ func _tile_pixel(t: int, v: int, x: int, y: int) -> Color:
 			if (y - 5) % 4 == 0 or bx == 0:
 				return P_WALL_D
 			return P_WALL.lerp(P_WALL_L, n * 0.3)
+		T_NEST:
+			# Nido (Fase 10): masa orgánica tejida con núcleo brillante
+			var c := P_NEST.lerp(P_NEST_L, n * 0.3)
+			var ddx := float(x) - 7.5
+			var ddy := float(y) - 7.5
+			var dd := ddx * ddx + ddy * ddy
+			if dd < 5.0:
+				return P_NEST_GLOW
+			elif dd < 11.0:
+				return P_NEST_GLOW.darkened(0.35)
+			if _h(x, y, v + 25) < 0.12:
+				c = P_NEST_D
+			return c
 	return P_DIRT
 
 
@@ -513,20 +548,108 @@ const BOSS := [
 ]
 
 
-func _make_boss() -> ImageTexture:
+# Paletas alternativas para BOSS (Fase 10): mismo molde de "demonio",
+# recoloreado por tipo de jefe — mismo truco que los slimes (un molde,
+# varias paletas). Cada letra de BOSS -> color.
+const BOSS_PALETTE_DEMON := {
+	"C": "3a3a45", "K": "f0c040", "B": "d6453f", "D": "7a1f1c",
+	"L": "ffd9a0", "W": "ffffff", "R": "ff2020", "M": "4a0f0c",
+}
+const BOSS_PALETTE_BAT := {   # jefe_murcielago: morado nocturno
+	"C": "2a2233", "K": "9a7ad0", "B": "4a3d66", "D": "2c2440",
+	"L": "c9b8ff", "W": "ffffff", "R": "ff2020", "M": "1a1426",
+}
+const BOSS_PALETTE_MOLE := {  # jefe_topo: tierra y excavación
+	"C": "3a2a1e", "K": "e8a040", "B": "8a5a3a", "D": "4a3226",
+	"L": "f0c898", "W": "e8e0d0", "R": "ff2020", "M": "2a1c14",
+}
+const BOSS_PALETTE_RUNNER := {  # jefe_corredor: naranja veloz
+	"C": "4a2a1a", "K": "ffe890", "B": "e07a30", "D": "a8501c",
+	"L": "ffd9a0", "W": "ffffff", "R": "ff2020", "M": "4a1f0c",
+}
+
+
+func _make_boss(pal: Dictionary = BOSS_PALETTE_DEMON) -> ImageTexture:
 	var img := Image.create(24, 18, false, Image.FORMAT_RGBA8)
 	for y in BOSS.size():
 		var row: String = BOSS[y]
 		for x in row.length():
-			match row[x]:
-				"C": img.set_pixel(x, y, Color("3a3a45"))
-				"K": img.set_pixel(x, y, P_GOLD)
-				"B": img.set_pixel(x, y, Color("d6453f"))
-				"D": img.set_pixel(x, y, Color("7a1f1c"))
-				"L": img.set_pixel(x, y, Color("ffd9a0"))
-				"W": img.set_pixel(x, y, Color.WHITE)
-				"R": img.set_pixel(x, y, Color("ff2020"))
-				"M": img.set_pixel(x, y, Color("4a0f0c"))
+			var ch := row[x]
+			if pal.has(ch):
+				img.set_pixel(x, y, Color(String(pal[ch])))
+	return ImageTexture.create_from_image(img)
+
+
+## Taladro (Fase 10): dron metálico con un taladro cónico abajo —
+## "rompedor vertical" que excava bloques sólidos.
+func _make_drill(body: Color, body_d: Color, bit: Color) -> ImageTexture:
+	var w := 16
+	var h := 14
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in range(0, 8):
+		for x in range(1, 15):
+			if (x == 1 or x == 14) and (y == 0 or y == 7):
+				continue
+			img.set_pixel(x, y, body_d if (x <= 2 or y >= 6) else body)
+	for p in [[7, 3], [8, 3], [7, 4], [8, 4]]:
+		img.set_pixel(p[0], p[1], Color("ff3030"))
+	for y in range(8, h):
+		var half := h - y
+		var x0 := 8 - half / 2
+		for x in range(x0, x0 + half):
+			if x < 0 or x >= w:
+				continue
+			img.set_pixel(x, y, bit.darkened(0.35) if (x + y) % 2 == 0 else bit)
+	return ImageTexture.create_from_image(img)
+
+
+## Topo (Fase 10): cuerpo ovalado con garras de excavar y hocico rosado.
+func _make_mole(body: Color, body_d: Color, claw: Color) -> ImageTexture:
+	var w := 16
+	var h := 12
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var dx := (float(x) - 7.5) / 7.5
+			var dy := (float(y) - 6.5) / 5.5
+			var d := dx * dx + dy * dy
+			if d > 1.0:
+				continue
+			img.set_pixel(x, y, body_d if (d > 0.8 or y > 9) else body)
+	for cx in [2, 13]:
+		for cy in range(8, 11):
+			img.set_pixel(cx, cy, claw)
+	img.set_pixel(7, 8, Color("e89aa0"))
+	img.set_pixel(8, 8, Color("e89aa0"))
+	for ex in [5, 10]:
+		img.set_pixel(ex, 4, Color("2a1c14"))
+	return ImageTexture.create_from_image(img)
+
+
+## Embistedor (Fase 10): cuerpo robusto con cuernos a ambos lados
+## (carga en cualquier dirección) y ojos furiosos.
+func _make_charger(body: Color, body_d: Color, horn: Color) -> ImageTexture:
+	var w := 22
+	var h := 16
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		for x in w:
+			var dx := (float(x) - 11.0) / 10.0
+			var dy := (float(y) - 9.0) / 6.5
+			var d := dx * dx + dy * dy
+			if d > 1.0:
+				continue
+			img.set_pixel(x, y, body_d if d > 0.78 else body)
+	for side in [0, 1]:
+		var base_x := 1 if side == 0 else w - 2
+		var dir := 1 if side == 0 else -1
+		for k in 4:
+			var hx := base_x + dir * k
+			var hy := 7 - k
+			if hx >= 0 and hx < w and hy >= 0:
+				img.set_pixel(hx, hy, horn)
+	for ex in [7, 14]:
+		img.set_pixel(ex, 5, Color("ff3030"))
 	return ImageTexture.create_from_image(img)
 
 

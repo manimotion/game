@@ -475,6 +475,157 @@ func _ready() -> void:
 	_check("fx acepta textos flotantes, anillos y ráfagas", true)
 	_check("existe el aviso de vida baja en el HUD", main._low_hp != null)
 
+	# ---- TEST 27: FASE 10 — nuevas variantes registradas (KINDS + Atlas) ----
+	var nuevas_kinds := ["taladro", "topo", "embistedor", "slime_mega",
+		"jefe_murcielago", "jefe_topo", "jefe_corredor"]
+	var faltan_kinds := []
+	for k: String in nuevas_kinds:
+		if not npcs_node.KINDS.has(k) or not Atlas.slimes.has(k):
+			faltan_kinds.append(k)
+	print("[27] variantes Fase 10 sin registrar:", faltan_kinds)
+	_check("KINDS y Atlas registran las variantes nuevas de Fase 10", faltan_kinds.is_empty())
+	_check("'taladro' y 'topo' excavan (digs); 'topo' nace en cuevas (cave)",
+		bool(npcs_node.KINDS["taladro"].get("digs", false))
+		and bool(npcs_node.KINDS["topo"].get("digs", false))
+		and bool(npcs_node.KINDS["topo"].get("cave", false)))
+	_check("'embistedor' y 'jefe_corredor' embisten (charges) con charge_dmg > dmg",
+		bool(npcs_node.KINDS["embistedor"].get("charges", false))
+		and int(npcs_node.KINDS["embistedor"].charge_dmg) > int(npcs_node.KINDS["embistedor"].dmg)
+		and bool(npcs_node.KINDS["jefe_corredor"].get("charges", false))
+		and int(npcs_node.KINDS["jefe_corredor"].charge_dmg) > int(npcs_node.KINDS["jefe_corredor"].dmg))
+	_check("FUSION_CHAIN encadena normal -> grande -> slime_mega",
+		npcs_node.FUSION_CHAIN.get("normal", "") == "grande"
+		and npcs_node.FUSION_CHAIN.get("grande", "") == "slime_mega")
+
+	# ---- TEST 28: FASE 10 — "taladro" excava el bloque de abajo (rompedor vertical) ----
+	var dig_y := 42
+	for tx in range(70, 76):
+		for ty in range(dig_y - 2, dig_y + 2):
+			w2.tiles.erase(Vector2i(tx, ty))
+			w2.damage.erase(Vector2i(tx, ty))
+	w2.tiles[Vector2i(73, dig_y + 1)] = w2.T_STONE
+	npcs_node.npcs.clear()
+	npcs_node._spawn_one("taladro", wall_p)
+	var did: int = npcs_node.npcs.keys()[0]
+	var dig_below := Vector2i(73, dig_y + 1)
+	npcs_node.npcs[did].pos = Vector2(73.0 * w2.TILE + w2.TILE * 0.5, float((dig_y + 1) * w2.TILE - 10))
+	npcs_node.npcs[did].vel = Vector2.ZERO
+	npcs_node.npcs[did].jump_t = 5.0
+	npcs_node.npcs[did].dig_cd = 0.0
+	npcs_node._simulate(0.05)
+	var dig_hp_left: int = int(w2.damage.get(dig_below, w2.HP[w2.T_STONE]))
+	print("[28] HP restante del bloque tras excavar:", dig_hp_left, "| dig_cd:", npcs_node.npcs[did].get("dig_cd", 0.0))
+	_check("el taladro excava el bloque de abajo (dmg = block_dmg) y entra en cooldown",
+		dig_hp_left == w2.HP[w2.T_STONE] - int(npcs_node.KINDS["taladro"].block_dmg)
+		and float(npcs_node.npcs[did].get("dig_cd", 0.0)) > 0.0)
+	for tx in range(70, 76):
+		for ty in range(dig_y - 2, dig_y + 2):
+			w2.tiles.erase(Vector2i(tx, ty))
+			w2.damage.erase(Vector2i(tx, ty))
+	npcs_node.npcs.clear()
+
+	# ---- TEST 29: FASE 10 — "embistedor" carga (winding) y embiste (charging) ----
+	var ch_y := 50
+	for tx in range(98, 104):
+		for ty in range(ch_y - 2, ch_y + 2):
+			w2.tiles.erase(Vector2i(tx, ty))
+			w2.damage.erase(Vector2i(tx, ty))
+	w2.tiles[Vector2i(100, ch_y + 1)] = w2.T_STONE
+	npcs_node.npcs.clear()
+	npcs_node._spawn_one("embistedor", wall_p)
+	var cid: int = npcs_node.npcs.keys()[0]
+	var k29: Dictionary = npcs_node.KINDS["embistedor"]
+	var n29: Dictionary = npcs_node.npcs[cid]
+	n29.pos = Vector2(100.0 * w2.TILE + w2.TILE * 0.5, float((ch_y + 1) * w2.TILE - 10))
+	n29.vel = Vector2.ZERO
+	var target29 := Node2D.new()
+	add_child(target29)
+	target29.position = n29.pos + Vector2(80.0, 0.0)
+	npcs_node._update_charge(n29, k29, target29, 80.0, 0.05, w2, false)
+	print("[29] estado tras detectar al jugador cerca:", n29.get("charge_state", ""))
+	_check("el embistedor empieza a 'cargar' (winding) cerca y a la altura del jugador",
+		n29.get("charge_state", "") == "winding")
+	var ticks29 := 0
+	while n29.get("charge_state", "") != "charging" and ticks29 < 20:
+		npcs_node._update_charge(n29, k29, target29, 80.0, 0.1, w2, false)
+		ticks29 += 1
+	print("[29] estado tras", ticks29, "ticks de carga:", n29.get("charge_state", ""), "| vel.x:", n29.vel.x)
+	_check("tras CHARGE_WINDUP, el embistedor embiste (charging) hacia el jugador a CHARGE_SPEED",
+		n29.get("charge_state", "") == "charging"
+		and signf(n29.vel.x) == signf(target29.position.x - n29.pos.x)
+		and absf(n29.vel.x) == npcs_node.CHARGE_SPEED)
+	target29.free()
+	npcs_node.npcs.clear()
+	for tx in range(98, 104):
+		for ty in range(ch_y - 2, ch_y + 2):
+			w2.tiles.erase(Vector2i(tx, ty))
+			w2.damage.erase(Vector2i(tx, ty))
+
+	# ---- TEST 30: FASE 10 — fusión de slimes (normal + normal -> grande) ----
+	npcs_node.npcs.clear()
+	npcs_node._spawn_one("normal", wall_p)
+	npcs_node._spawn_one("normal", wall_p)
+	var ids30: Array = npcs_node.npcs.keys()
+	npcs_node.npcs[ids30[0]].pos = Vector2(2000.0, 500.0)
+	npcs_node.npcs[ids30[1]].pos = Vector2(2020.0, 500.0)
+	for i in 8:
+		npcs_node._process_fusions(1.0)
+	print("[30] NPCs tras fusión:", npcs_node.npcs.size(), "| kind:", str(npcs_node.npcs.values()[0].get("kind", "")))
+	_check("dos slimes 'normal' juntos por MERGE_TIME se fusionan en 'grande'",
+		npcs_node.npcs.size() == 1 and npcs_node.npcs.values()[0].get("kind", "") == "grande")
+	npcs_node.npcs.clear()
+
+	# ---- TEST 31: FASE 10 — nidos (T_NEST): siembra, escaneo y eclosión ----
+	var nest_c: Vector2i = w2.spawn_nest(80)
+	print("[31] nido sembrado en:", nest_c, "| tile:", w2.tiles.get(nest_c, -1))
+	_check("spawn_nest coloca un T_NEST junto a una cara de aire",
+		nest_c.x >= 0 and w2.tiles.get(nest_c, -1) == w2.T_NEST)
+	npcs_node.npcs.clear()
+	npcs_node._nests.clear()
+	npcs_node._nest_scan_t = 0.0
+	npcs_node._update_nests(0.0, w2)
+	_check("el escaneo periódico detecta el nido sembrado", npcs_node._nests.has(nest_c))
+	npcs_node._nests[nest_c] = npcs_node.NEST_SPAWN_EVERY
+	npcs_node._update_nests(0.001, w2)
+	print("[31] NPCs tras madurar el nido:", npcs_node.npcs.size())
+	_check("un nido maduro escupe un enemigo en una cara de aire vecina", npcs_node.npcs.size() == 1)
+	main.on_nest_destroyed(nest_c)
+	_check("on_nest_destroyed olvida el nido (deja de escupir)", not npcs_node._nests.has(nest_c))
+	for c: Vector2i in w2.tiles.keys():
+		if w2.tiles[c] == w2.T_NEST:
+			w2.tiles.erase(c)
+	npcs_node._nests.clear()
+	npcs_node.npcs.clear()
+
+	# ---- TEST 32: FASE 10 — roster de jefes + anuncio al iniciar la run ----
+	_check("BOSS_KINDS incluye 4 jefes (clásico, murciélago, topo, corredor), todos boss=true",
+		main.BOSS_KINDS.size() == 4
+		and "jefe_murcielago" in main.BOSS_KINDS and "jefe_topo" in main.BOSS_KINDS
+		and "jefe_corredor" in main.BOSS_KINDS
+		and bool(npcs_node.KINDS["jefe_murcielago"].get("boss", false))
+		and bool(npcs_node.KINDS["jefe_topo"].get("boss", false))
+		and bool(npcs_node.KINDS["jefe_corredor"].get("boss", false)))
+	main.run_boss_kind = "jefe_topo"
+	var anuncio32: String = main._boss_announcement()
+	print("[32] anuncio del jefe:", anuncio32)
+	_check("el anuncio del jefe incluye su nombre y una pista de estrategia",
+		"Mega Topo" in anuncio32 and "excava" in anuncio32)
+	npcs_node.npcs.clear()
+	npcs_node.night_wave(npcs_node.BOSS_EVERY)
+	var has_alt_boss := false
+	for nid: int in npcs_node.npcs:
+		if npcs_node.npcs[nid].kind == "jefe_topo":
+			has_alt_boss = true
+	print("[32] oleada con jefe de la run:", npcs_node.npcs.size(), "| jefe_topo:", has_alt_boss)
+	_check("night_wave invoca el jefe elegido para la run (run_boss_kind)", has_alt_boss)
+	main._process(0.0)
+	print("[32] HUD jefe:", main._boss_label.text if main._boss_label != null else "?", "| visible:", main._boss_panel.visible)
+	_check("la barra del HUD muestra el nombre del jefe vivo (roster variable)",
+		main._boss_panel.visible and main._boss_label != null and "MEGA TOPO" in main._boss_label.text)
+	npcs_node.npcs.clear()
+	main.run_boss_kind = "jefe"
+	main._boss_panel.hide()
+
 	print("")
 	if _fail == 0:
 		print("=== TODO OK: la lógica de crafteo (_do_craft) funciona correctamente ===")

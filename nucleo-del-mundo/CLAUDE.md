@@ -6,12 +6,14 @@ supervivencia por noches — de día recolectas y construyes, de noche defiendes
 el objetivo es sobrevivir X noches. La base (murallas, torres, trampas) es una
 vía de progresión tan importante como el equipo. El plan por fases está en
 `ROADMAP.md`; el GDD original sigue siendo la referencia técnica de los sistemas
-base. Estado: Fases 1-9 completadas (core sandbox + monetización + arte/SFX
+base. Estado: Fases 1-10 completadas (core sandbox + monetización + arte/SFX
 procedurales + ciclo día/noche jugable + defensa pasiva con murallas y fogatas
 + defensa activa con trampas de pinchos y torres de flechas + estructura de
 run: jefe cada 5 noches, recompensa de Núcleos por noche, victoria/derrota con
-panel de resumen). La Fase 10+ (campañas/mundos temáticos) está bloqueada hasta
-validar diversión con jugadores reales (ver ROADMAP.md).
+panel de resumen + bestiario expandido: taladro/topo que excavan, fusión de
+slimes, embistedor con embestida, nidos que escupen enemigos, y un roster de
+4 jefes anunciado al iniciar la run). La Fase 11+ (campañas/mundos temáticos)
+está bloqueada hasta validar diversión con jugadores reales (ver ROADMAP.md).
 El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
@@ -75,7 +77,8 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   cosmético: nunca viaja por red ni toca estado del juego. Incluye jingles
   (`_make_jingle`) de victoria/derrota y sonidos de torre/pinchos/jefe/amanecer/noche;
   `main._show_toast` dispara sonido por PREFIJO de emoji del toast (☄️🛠️👾👹🌙☀️) —
-  así el aviso y su sonido llegan juntos a todos los peers.
+  así el aviso y su sonido llegan juntos a todos los peers. Fase 10: sonido
+  "embestida" (embistedor/jefe_corredor) y de eclosión de nido.
 - `scripts/main.gd` — lobby (modos Supervivencia/Sandbox), HUD (fase del ciclo, barra de
   vida, equipo, toast central con desvanecido), spawn, inventarios (servidor), crafting
   (equipo único + bloques apilables: muralla/fogata/trampa/torre), vida/respawn en fogata
@@ -94,10 +97,20 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   barra de vida del JEFE en el HUD (`_boss_panel`, top-center, MOUSE_FILTER_IGNORE y
   fuera de `is_point_on_ui` como `_low_hp` — el ratio del jefe viaja en el snapshot),
   chispas verdes al curar en `_set_hp`.
+  FASE 10 — ROSTER DE JEFES: `BOSS_KINDS` (jefe, jefe_murcielago, jefe_topo,
+  jefe_corredor) + `BOSS_HINTS`; `_host()` elige `run_boss_kind` al azar y lo
+  anuncia con un toast (`_boss_announcement()`, nombre + pista táctica) al crear
+  la run y a cada peer que se une (`request_join`); `night_wave` invoca ese jefe
+  al llegar `BOSS_EVERY`. `_boss_panel`/`_boss_label` ahora son genéricos: se
+  activan con CUALQUIER `boss: true` vivo y muestran su nombre propio.
+  `on_nest_destroyed(coord)` avisa a `npc_manager.forget_nest` y da `COIN_NEST`.
   MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles`
   persistidos (v4).
 - `scripts/world.gd` — tiles (incluye T_WALL 400 HP, T_CAMPFIRE 200 HP — Fase 7,
-  T_SPIKES 120 HP no sólida y T_TOWER 250 HP sólida — Fase 8), chunks/streaming,
+  T_SPIKES 120 HP no sólida y T_TOWER 250 HP sólida — Fase 8, T_NEST 150 HP
+  sólida — Fase 10: `spawn_nest(near_x)` busca una cara de aire en una cueva
+  cercana y coloca un nido; destruirlo (`_do_hit`) llama a
+  `main.on_nest_destroyed`), chunks/streaming,
   HP por tile, minado/colocación, `damage_tile()` para daño de NPCs,
   `nearest_campfire_pos()`, generación con cuevas (ruido 2D) e islas flotantes, luz
   día/noche (`daylight()` delega en el reloj de partida de main.gd), meteoro (FX de
@@ -120,6 +133,18 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   de muerte llaman `main.count_kill(kind)`; rpcs unreliable PURAMENTE cosméticos
   `block_hit_fx`/`spike_fx` (sonido/salpicadura con gate de distancia) — el estado real
   sigue viajando solo por `damage_tile`/`sync_npcs`.
+  FASE 10 — bestiario expandido: "taladro" y "topo" (`digs: true`) excavan el bloque
+  de abajo (`DIG_CD`, `block_dmg`) y son inmunes a `T_SPIKES` (las destruyen al
+  pasar); "topo" además nace en cuevas (`cave: true`, `_spawn_underground`).
+  "embistedor" y "jefe_corredor" (`charges: true`) usan `_update_charge` — FSM
+  idle→winding (`CHARGE_WINDUP`)→charging (`CHARGE_SPEED` por `CHARGE_TILES`,
+  daño `charge_dmg`)→cooldown. `_process_fusions`/`_fuse`: dos slimes del mismo
+  tipo cerca por `MERGE_TIME` (radio `MERGE_RADIUS`) se fusionan según
+  `FUSION_CHAIN` (normal→grande→slime_mega). `_nests`/`_update_nests`/
+  `_spawn_from_nest`/`forget_nest`: rastrean los `T_NEST` del mundo y escupen un
+  enemigo cada `NEST_SPAWN_EVERY`. `BOSS_KINDS`/`BOSS_HINTS` (en main.gd) añaden
+  "jefe_murcielago"/"jefe_topo"/"jefe_corredor" como variantes de jefe; rpcs
+  unreliable cosméticos `charge_fx`/`nest_spawn_fx`.
 - `scripts/tower_manager.gd` — torre de flechas (Fase 8), mismo patrón que
   `npc_manager`: el servidor re-escanea `world.tiles` cada `SCAN_EVERY` segundos
   buscando `T_TOWER`, dispara con cooldown al enemigo más cercano en rango
@@ -172,8 +197,10 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 El plan por fases vive en **`ROADMAP.md`** (derivado de la visión de supervivencia
 por noches). Resumen: Fase 6 ciclo día/noche jugable → Fase 7 defensa pasiva
 (murallas, fogata) → Fase 8 defensa activa (torres, trampas) → Fase 9 estructura
-de run (win/lose, escalado, recompensas) → Fase 10+ campañas y mundos temáticos.
-Fases 1-9 completas; la Fase 10+ está bloqueada hasta validar diversión con
+de run (win/lose, escalado, recompensas) → Fase 10 bestiario expandido (taladro/
+topo que excavan, embistedor, fusión de slimes, nidos, roster de 4 jefes
+anunciado al iniciar) → Fase 11+ campañas y mundos temáticos.
+Fases 1-10 completas; la Fase 11+ está bloqueada hasta validar diversión con
 jugadores reales.
 
 Vía paralela de negocio (independiente del gameplay, ver MONETIZACION.md):

@@ -34,15 +34,16 @@ const T_WALL := 7             # muralla craftable — sólida (Fase 7)
 const T_CAMPFIRE := 8         # fogata — respawn + regen, no sólida (Fase 7)
 const T_SPIKES := 9           # trampa de pinchos — daña NPCs por contacto (Fase 8)
 const T_TOWER := 10           # torre de flechas — sólida, dispara sola (Fase 8)
+const T_NEST := 11            # nido — sólido; si no se destruye, escupe enemigos (Fase 10)
 
 # GDD §3.2: HP y drop por tipo de tile
 const HP := {T_DIRT: 40, T_STONE: 100, T_ORE: 140, T_WOOD: 60, T_LEAF: 20,
-	T_WALL: 400, T_CAMPFIRE: 200, T_SPIKES: 120, T_TOWER: 250}
+	T_WALL: 400, T_CAMPFIRE: 200, T_SPIKES: 120, T_TOWER: 250, T_NEST: 150}
 const DROPS := {T_DIRT: "dirt", T_STONE: "stone", T_ORE: "ore", T_WOOD: "wood",
 	T_WALL: "muralla", T_CAMPFIRE: "fogata", T_SPIKES: "trampa", T_TOWER: "torre"}
 const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD,
 	"muralla": T_WALL, "fogata": T_CAMPFIRE, "trampa": T_SPIKES, "torre": T_TOWER}
-const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true, T_TOWER: true}
+const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true, T_TOWER: true, T_NEST: true}
 
 const REACH := 200.0          # alcance validado por el servidor
 
@@ -164,6 +165,30 @@ func surface_spawn(x: int) -> Vector2:
 		if SOLID.has(tiles.get(Vector2i(x, y), 0)):
 			return Vector2(x * TILE + TILE * 0.5, y * TILE - 40.0)
 	return Vector2(x * TILE, 100.0)
+
+
+## Nido (Fase 10): reemplaza un tile sólido subterráneo cercano a near_x
+## por T_NEST, eligiendo uno con al menos una cara de aire (cueva) para
+## que los enemigos que escupa tengan espacio. Vector2i(-1,-1) si falla.
+func spawn_nest(near_x: int) -> Vector2i:
+	near_x = clampi(near_x, 2, W - 3)
+	for _attempt in 20:
+		var x := clampi(near_x + randi_range(-8, 8), 2, W - 3)
+		var y := randi_range(SKY_ROWS + 6, H - 3)
+		var c := Vector2i(x, y)
+		var t: int = tiles.get(c, 0)
+		if not SOLID.has(t) or t == T_NEST or t == T_BEDROCK:
+			continue
+		var has_air := false
+		for d in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+			if not SOLID.has(tiles.get(c + d, 0)):
+				has_air = true
+				break
+		if has_air:
+			_set_tile(c, T_NEST)
+			apply_tile.rpc(c, T_NEST)
+			return c
+	return Vector2i(-1, -1)
 
 
 # -------------------------------------------------------------
@@ -393,6 +418,9 @@ func _do_hit(coord: Vector2i, miner_id: int) -> void:
 			get_parent().add_item(miner_id, drop)
 		if t == T_ORE:   # MONETIZACIÓN: el mineral también da Núcleos
 			get_parent().add_coins(miner_id, get_parent().COIN_ORE)
+		elif t == T_NEST:   # Fase 10: destruir un nido da una recompensa extra
+			get_parent().add_coins(miner_id, get_parent().COIN_NEST)
+			get_parent().on_nest_destroyed(coord)
 	else:
 		damage[coord] = hp_left
 		damage_ratio[coord] = float(hp_left) / HP[t]

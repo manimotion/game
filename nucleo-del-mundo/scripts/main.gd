@@ -71,6 +71,18 @@ const SURVIVAL_NIGHTS := 7   # objetivo del modo supervivencia
 const NIGHT_REWARD_BASE := 10  # Núcleos al amanecer por sobrevivir una noche
 const NIGHT_REWARD_STEP := 5   # + esto por cada número de noche (escala el riesgo)
 const VICTORY_BONUS := 100     # Núcleos extra al completar el modo supervivencia
+const COIN_NEST := 8           # Núcleos extra al destruir un nido (Fase 10)
+
+# Fase 10 — roster de jefes: cada BOSS_EVERY noches aparece uno de estos,
+# elegido al azar al iniciar la partida y anunciado de inmediato (toast +
+# rugido) para que el jugador planee su defensa contra ese jefe en concreto.
+const BOSS_KINDS := ["jefe", "jefe_murcielago", "jefe_topo", "jefe_corredor"]
+const BOSS_HINTS := {
+	"jefe": "rompe muros y se enfurece con poca vida — refuerza tus murallas",
+	"jefe_murcielago": "vuela y embiste en línea recta — las torres de flechas son clave",
+	"jefe_topo": "excava bajo tus pies y ataca tus muros desde el subsuelo",
+	"jefe_corredor": "carga en horizontal a gran velocidad — no te quedes en su camino",
+}
 
 # MONETIZACIÓN — catálogo de skins (solo cosmético, nunca pay-to-win).
 # El SERVIDOR valida compra/equipamiento (§16); el cliente solo pide.
@@ -134,6 +146,7 @@ var _phase_t := DAY_SECONDS         # tiempo restante de la fase actual
 var _dusk_warned := false
 var _run_over := false              # evita que _end_run() se dispare dos veces (Fase 9)
 var run_kills := 0                  # bajas de la run actual (SOLO servidor, Fase 9)
+var run_boss_kind := "jefe"         # jefe de esta run (Fase 10), elegido por el host
 
 var _ui: CanvasLayer
 var _menu: PanelContainer
@@ -163,6 +176,7 @@ var _run_title: Label = null
 var _run_body: Label = null
 var _boss_panel: Control = null     # barra de vida del jefe en el HUD (Fase 9)
 var _boss_bar: ProgressBar = null
+var _boss_label: Label = null       # nombre del jefe vivo (Fase 10: roster variable)
 
 
 func _ready() -> void:
@@ -212,17 +226,23 @@ func _process(delta: float) -> void:
 		else:
 			_low_hp.visible = false
 
-	# Barra del JEFE (Fase 9, pulido): visible mientras haya un jefe vivo.
-	# Funciona en todos los peers: el ratio de vida viaja en el snapshot.
+	# Barra del JEFE (Fase 9/10, pulido): visible mientras haya CUALQUIER
+	# enemigo "boss" vivo (roster variable). Funciona en todos los peers:
+	# el ratio de vida y el kind viajan en el snapshot.
 	if _boss_panel != null and npc_mgr != null:
 		var bratio := -1.0
+		var bkind := ""
 		for id: int in npc_mgr.npcs:
-			if str(npc_mgr.npcs[id].get("kind", "")) == "jefe":
+			var nk := str(npc_mgr.npcs[id].get("kind", ""))
+			if bool(npc_mgr.KINDS.get(nk, {}).get("boss", false)):
 				bratio = npc_mgr._ratio_of(npc_mgr.npcs[id])
+				bkind = nk
 				break
 		if bratio >= 0.0:
 			_boss_panel.show()
 			_boss_bar.value = bratio
+			if _boss_label != null:
+				_boss_label.text = "👹 " + str(npc_mgr.KINDS.get(bkind, {}).get("nombre", "JEFE")).to_upper()
 		elif _boss_panel.visible:
 			_boss_panel.hide()
 
@@ -289,6 +309,7 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	game_mode = mode
 	_run_over = false
 	run_kills = 0
+	run_boss_kind = BOSS_KINDS.pick_random()
 	if Net.host_game() != OK:
 		_show_toast("❌ Error al crear la partida (¿puerto ocupado?)")
 		return
@@ -303,6 +324,7 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	_apply_inventory(inventories[1])
 	_apply_profile(prof)
 	_show_toast("🟢 Partida creada — comparte tu IP: %s" % Net.local_ip())
+	_broadcast_toast(_boss_announcement())
 
 
 func _on_join_pressed() -> void:
@@ -377,7 +399,8 @@ func request_join(nombre: String) -> void:
 	spawn_player_remote.rpc(new_id, spawn, str(prof.skin), nombre)
 	_spawn_player(new_id, spawn, str(prof.skin), nombre)
 	_push_profile(new_id)
-	apply_phase.rpc_id(new_id, is_night, night_number, _phase_t, game_mode)
+	apply_phase.rpc_id(new_id, is_night, night_number, _phase_t, game_mode, run_boss_kind)
+	_toast_to(new_id, _boss_announcement())
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -559,15 +582,33 @@ func add_coins(peer_id: int, n: int) -> void:
 	_push_profile(peer_id)
 
 
+## Un nido (T_NEST) fue destruido por un jugador (Fase 10): deja de
+## generar enemigos de inmediato. Lo llama world._do_hit al minarlo.
+func on_nest_destroyed(coord: Vector2i) -> void:
+	if npc_mgr != null:
+		npc_mgr.forget_nest(coord)
+
+
 ## Estadística de bajas de la run (Fase 9, pulido) — la llaman las dos
 ## rutas de muerte de npc_manager (golpe del jugador y daño ambiental).
-## SOLO servidor. Derrotar al jefe se anuncia a todos.
+## SOLO servidor. Derrotar a CUALQUIER jefe (Fase 10: roster variable)
+## se anuncia a todos con su nombre propio.
 func count_kill(kind: String) -> void:
 	if not multiplayer.is_server():
 		return
 	run_kills += 1
-	if kind == "jefe":
-		_broadcast_toast("⚔️ ¡Jefe derrotado!")
+	if kind in BOSS_KINDS:
+		var nombre := str(npc_mgr.KINDS.get(kind, {}).get("nombre", "Jefe"))
+		_broadcast_toast("⚔️ ¡%s derrotado!" % nombre)
+
+
+## Texto del aviso de jefe de la run (Fase 10): nombre + táctica para
+## que el jugador empiece a planear su defensa desde el minuto cero.
+func _boss_announcement() -> String:
+	var info: Dictionary = npc_mgr.KINDS.get(run_boss_kind, {})
+	var nombre := str(info.get("nombre", "Jefe"))
+	var hint := str(BOSS_HINTS.get(run_boss_kind, ""))
+	return "👹 Jefe de esta run: %s — %s" % [nombre, hint]
 
 
 func try_buy_skin(skin_id: String) -> void:
@@ -782,7 +823,8 @@ func _set_phase(night: bool) -> void:
 		if npcs_node != null:
 			npcs_node.night_wave(night_number)
 			if night_number % npcs_node.BOSS_EVERY == 0:
-				_broadcast_toast("👹 ¡Un jefe ha llegado! (Noche %d)" % night_number)
+				var nombre := str(npcs_node.KINDS.get(run_boss_kind, {}).get("nombre", "Jefe"))
+				_broadcast_toast("👹 ¡%s ha llegado! (Noche %d)" % [nombre, night_number])
 	else:
 		if night_number > 0:
 			_broadcast_toast("☀️ Amaneció — sobreviviste la noche %d" % night_number)
@@ -792,15 +834,16 @@ func _set_phase(night: bool) -> void:
 		if game_mode == "survival" and night_number == SURVIVAL_NIGHTS:
 			_end_run(true)
 			return
-	apply_phase.rpc(is_night, night_number, _phase_t, game_mode)
+	apply_phase.rpc(is_night, night_number, _phase_t, game_mode, run_boss_kind)
 
 
 @rpc("authority", "call_remote", "reliable")
-func apply_phase(night: bool, n: int, t_left: float, mode: String) -> void:
+func apply_phase(night: bool, n: int, t_left: float, mode: String, boss_kind: String) -> void:
 	is_night = night
 	night_number = n
 	_phase_t = t_left
 	game_mode = mode
+	run_boss_kind = boss_kind
 
 
 ## 1.0 = pleno día, 0.0 = plena noche; amanecer/atardecer de ~12 s.
@@ -910,7 +953,7 @@ func _reset_run() -> void:
 		else:
 			respawn_player.rpc_id(pid, pos)
 			update_health.rpc_id(pid, PLAYER_MAX_HP)
-	apply_phase.rpc(is_night, night_number, _phase_t, game_mode)
+	apply_phase.rpc(is_night, night_number, _phase_t, game_mode, run_boss_kind)
 
 
 # -------------------------------------------------------------
@@ -1174,6 +1217,7 @@ func _show_hud() -> void:
 	blbl.add_theme_font_size_override("font_size", 15)
 	blbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bbox.add_child(blbl)
+	_boss_label = blbl
 
 	_boss_bar = ProgressBar.new()
 	_boss_bar.custom_minimum_size = Vector2(280, 16)

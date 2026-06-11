@@ -39,6 +39,8 @@ func _ready() -> void:
 	_streams["amanecer"] = _make(660.0, 990.0, 0.35, 0.3, false)  # amanece
 	_streams["victoria"] = _make_jingle([523.25, 659.25, 783.99, 1046.5], 0.16, 0.4)  # C E G C
 	_streams["derrota"] = _make_jingle([392.0, 329.63, 261.63, 196.0], 0.22, 0.4)     # G E C G desc.
+	# Fase 10: enemigos especiales (taladro, embestidor, nidos)
+	_streams["embestida"] = _make(80.0, 320.0, 0.18, 0.55, true)  # carga del embistedor
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		add_child(p)

@@ -122,7 +122,61 @@ runs, no solo sandbox eterno.
    - Test headless: bajas por run, jefe rompe-murallas, panel con bajas,
      sonidos nuevos presentes, barra del jefe y sprite propio del jefe.
 
-## Fase 10+ — Evolución futura (del doc de visión, NO empezar aún)
+## Fase 10 — Bestiario expandido y jefes variados ✅ HECHA (2026-06-11)
+
+Más complejidad táctica para las oleadas nocturnas: nuevos tipos de enemigo,
+una mecánica de "los slimes se organizan" y un roster de jefes anunciado al
+arrancar la run para que el jugador planee su defensa desde el minuto cero.
+
+1. ✅ **Taladro** (rompedor vertical, `KINDS["taladro"]`): desde la noche 3
+   puede aparecer en las oleadas. Excava periódicamente (`DIG_CD=1.2s`) el
+   bloque de debajo (`damage_tile` con `block_dmg=50`), abriendo pozos hacia
+   la base. Es inmune a `T_SPIKES`: en vez de recibir daño, las destruye al
+   pasar (flag `digs: true`, compartido con "topo" y "jefe_topo").
+2. ✅ **Fusión de slimes** (`_process_fusions`, `FUSION_CHAIN`): dos slimes
+   "normal" que permanecen a menos de `MERGE_RADIUS=46px` por `MERGE_TIME=8s`
+   se combinan en un "grande"; dos "grande" igual se combinan en
+   "slime_mega" (320 HP, rompe-murallas `block_dmg=40`). FX de fusión
+   (ráfaga + anillo) en el punto medio.
+3. ✅ **Embistedor** (`KINDS["embistedor"]`, flag `charges: true`): FSM propia
+   (`_update_charge`) — si el jugador está cerca y a su altura, se detiene
+   "cargando" (`winding`, `CHARGE_WINDUP=0.9s`) y luego embiste en horizontal
+   (`charging`) a `CHARGE_SPEED=420px/s` durante `CHARGE_TILES=5` cuadros (o
+   hasta chocar contra un bloque), haciendo `charge_dmg` (mayor que su `dmg`
+   normal) por contacto. Tras embestir entra en `CHARGE_COOLDOWN=3s`.
+4. ✅ **Topo** (`KINDS["topo"]`, flags `digs: true, cave: true`): puede nacer
+   directamente en bolsas de aire subterráneas (`_spawn_underground`) y
+   también de día con baja probabilidad (`_roll_kind`). Excava como el
+   taladro pero con `block_dmg` menor.
+5. ✅ **Nidos** (`T_NEST`, mundo): `world.spawn_nest(near_x)` coloca un tile
+   sólido de 150 HP junto a una cara de aire en una cueva. `night_wave`
+   siembra uno en las oleadas impares. `npc_manager` los rastrea
+   (`_nests`, re-escaneo cada `NEST_SCAN_EVERY=4s`) y cada
+   `NEST_SPAWN_EVERY=22s` escupen un enemigo ("topo" o "normal") por su cara
+   de aire (`_spawn_from_nest`, FX `nest_spawn_fx`). Destruirlo a tiempo
+   (`world._do_hit` → `main.on_nest_destroyed` → `forget_nest`) lo detiene y
+   da `COIN_NEST=8` Núcleos extra.
+6. ✅ **Roster de jefes** (`main.BOSS_KINDS`): además del "Jefe Demonio"
+   clásico, ahora `night % BOSS_EVERY == 0` puede traer al "Murciélago
+   Gigante" (`jefe_murcielago`, vuela y embiste en línea recta), "Mega Topo"
+   (`jefe_topo`, excava y rompe muros desde el subsuelo) o "Mega Corredor"
+   (`jefe_corredor`, embiste con `charges`). `_host()` elige
+   `run_boss_kind` al azar al crear la partida y lo anuncia de inmediato con
+   un toast (`_boss_announcement()`, nombre + pista táctica de
+   `BOSS_HINTS`); los que se unen después reciben el mismo aviso de forma
+   privada. La barra de vida del jefe en el HUD (`_boss_panel`/`_boss_label`)
+   ahora es genérica: se activa con CUALQUIER `boss: true` vivo y muestra su
+   nombre propio. Derrotar a cualquier jefe del roster anuncia su nombre via
+   `count_kill`.
+7. ✅ Test headless (TEST 27-32): registro de las nuevas variantes en
+   `KINDS`/`Atlas`, excavación del taladro (daño = `block_dmg`, cooldown
+   activo), FSM del embistedor (`winding` → `charging` a `CHARGE_SPEED`),
+   fusión normal+normal → grande tras `MERGE_TIME`, siembra/escaneo/eclosión
+   de un nido y `forget_nest`, roster de jefes (`BOSS_KINDS`,
+   `_boss_announcement`, `night_wave` invoca `run_boss_kind`, HUD muestra el
+   nombre del jefe vivo).
+
+## Fase 11+ — Evolución futura (del doc de visión, NO empezar aún)
 
 - **Modo Campañas** (historia, NPCs, eventos — estilo Wesnoth).
 - **Mundos temáticos** (reglas/enemigos distintos).

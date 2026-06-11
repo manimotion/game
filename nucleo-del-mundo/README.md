@@ -1,87 +1,126 @@
-# ⛏️ Núcleo del Mundo — Fases 3-4: Chunks, Crafting, NPCs y Servidor Dedicado
+# 🌙 Núcleo del Mundo
 
-Tercera iteración en **Godot 4.3+ / GDScript**. El mundo ahora es 4× más grande y se transmite por chunks, minar toma varios golpes según tu pico, hay slimes que te persiguen, meteoros que caen del cielo, guardado de partida, y el mismo proyecto puede correr como **servidor dedicado headless**.
+Sandbox de supervivencia 2D multijugador para Android, en **Godot 4.3+ / GDScript**.
 
-## 🆕 Qué agregan las Fases 3-4
+> "Un sandbox donde el jugador debe sobrevivir una serie de noches mientras
+> construye, progresa y diseña un sistema de defensa vivo contra el mundo."
 
-| Sistema | GDD | Detalle |
-|---|---|---|
-| Chunks 16×16 con streaming | §2.3 | El cliente pide chunks cercanos al moverse y descarga los lejanos. Ya no se envía el mundo completo al unirse |
-| Renderizado por chunk | §15 | Cambiar un tile redibuja solo su chunk |
-| HP por tile + grietas | §3.2, §6 | Tierra 40, madera 60, piedra 100, mineral 140. El tile se oscurece con el daño |
-| Picos (herramientas) | §7.2 | Mano 20 dmg → madera 35 → piedra 60 → dorado 100. El **servidor** decide el daño consultando tu inventario real |
-| Árboles | — | Fuente de madera para crafting. Tronco y hojas son decorativos (no colisionan, §3.1) |
-| Crafting | §8 | 3 recetas de picos. El servidor valida y consume ingredientes |
-| NPCs slime con FSM | §12 | idle → wander → chase. Simulados 100% en el servidor, sincronizados a 10 Hz. Contacto = daño; tap = atacarlos; al morir sueltan mineral |
-| Vida + respawn | — | 100 HP autoritativos en el servidor. Al morir reapareces en la superficie |
-| Evento meteoro | §9 | El scheduler del servidor lo dispara cada 70-120 s: cráter + mineral, anunciado a todos |
-| Persistencia | §14 | JSON comprimido gzip en `user://`. Autosave cada 60 s y al cerrar. Botón "Continuar partida" |
-| Servidor dedicado | §1.2 | El mismo proyecto corre headless como servidor puro |
+De día exploras, minas, talas y construyes; al caer la noche, oleadas de
+enemigos atacan tu base. La infraestructura (murallas, fogatas, trampas,
+torres) es una vía de progresión tan importante como el equipo.
 
-## 🎮 Cómo se juega ahora
+**Estado: Fases 1-10 completadas.** El plan por fases vive en
+[`ROADMAP.md`](ROADMAP.md), la arquitectura y convenciones en
+[`CLAUDE.md`](CLAUDE.md), y el diseño técnico de referencia en el GDD original.
 
-- **Minar:** mantén el dedo (o clic) sobre un tile — golpea cada 0.3 s. Toque corto = un golpe. Los tiles se agrietan antes de romperse.
-- **Progresión:** tala árboles → fabrica el pico de madera (🛠️ arriba a la derecha) → mina piedra más rápido → pico de piedra → busca mineral (o mata slimes / espera meteoros) → pico dorado.
-- **Slimes:** verdes, saltan hacia ti. Tócalos para atacar. Te quitan 8 HP por contacto.
-- **Construir:** selecciona tierra/piedra/madera en el HUD y toca un espacio vacío.
+## ✅ Qué incluye el juego hoy
+
+- **Core sandbox multijugador** (Fases 1-4): mundo en chunks 16×16 con
+  streaming, minado/colocación con HP por tile y grietas, árboles, picos
+  progresivos (madera → piedra → dorado), crafting validado por el servidor,
+  meteoros, persistencia (gzip JSON) y servidor dedicado headless.
+- **Monetización cosmética** (Fase 5): Núcleos, tienda 🛒, skins (solo
+  cosméticas, nunca ventaja de juego) y perfiles persistentes.
+- **Arte y sonido procedurales**: sprites/texturas y SFX/música generados en
+  código (sin assets externos), incluyendo jingles, fogata viva y FX de
+  partículas.
+- **Ciclo día/noche jugable** (Fase 6): reloj de partida server-authoritative,
+  modos Supervivencia (7 noches) y Sandbox libre, oleadas nocturnas
+  escaladas por noche, primer enemigo volador (murciélago).
+- **Defensa pasiva** (Fase 7): muralla (bloquea y absorbe daño) y fogata
+  (respawn + regeneración nocturna cerca de ella).
+- **Defensa activa** (Fase 8): trampa de pinchos (daño por contacto) y torre
+  de flechas (dispara sola al enemigo más cercano).
+- **Estructura de run** (Fase 9): jefe cada 5 noches, recompensa de Núcleos
+  por noche sobrevivida, panel de victoria/derrota con resumen de la run
+  (noches, bajas, recursos, bono).
+- **Bestiario expandido y jefes variados** (Fase 10): "taladro" y "topo"
+  excavan bloques (y destruyen pinchos al pasar), "topo" nace en cuevas,
+  "embistedor" carga y embiste en horizontal, los slimes se fusionan en
+  variantes más grandes y poderosas, los "nidos" escupen enemigos si no se
+  destruyen a tiempo, y un roster de 4 jefes (clásico, murciélago gigante,
+  mega topo, mega corredor) se elige al azar y se **anuncia al iniciar la
+  run** con una pista táctica.
+
+La Fase 11+ (campañas / mundos temáticos) está **bloqueada** hasta validar
+diversión con jugadores reales.
+
+## 🎮 Cómo se juega
+
+- **Lobby**: elige "🌙 Supervivencia — 7 noches" (sin guardado, con
+  victoria/derrota) o "🏖️ Sandbox libre" (con guardado y sin oleadas
+  nocturnas exigentes).
+- **De día**: mina, recolecta madera/piedra/mineral y fabrica equipo y
+  bloques de defensa (panel "🛠️ Fabricar").
+- **Al anochecer**: un toast avisa y llega una oleada que escala con el
+  número de noche; cada 5 noches aparece además el jefe de la run.
+- **Defiéndete**: coloca murallas para bloquear el paso, fogatas para curarte
+  de noche, trampas de pinchos y torres de flechas para daño automático.
+- **Cuidado con**: taladros/topos que excavan bajo tu base, embistedores que
+  cargan y golpean fuerte en línea recta, slimes que se fusionan si los dejas
+  agruparse, y nidos que hay que destruir antes de que empiecen a escupir
+  enemigos.
+- **Sobrevive 7 noches** para ganar (bono de Núcleos); morir de noche en
+  supervivencia termina la run con un panel de resumen.
 
 ## 🚀 Ejecutar
 
-Igual que antes: Godot 4.3+ → Importar → F5. Multijugador local con **Depurar → Ejecutar múltiples instancias**.
+Godot 4.3+ → Importar → F5. Multijugador local: **Depurar → Ejecutar
+múltiples instancias**.
 
-### Servidor dedicado (Fase 4)
+### Servidor dedicado
 
 ```bash
 # Desde la carpeta del proyecto (requiere el ejecutable de Godot en el PATH):
 godot --headless --path . -- --server
 ```
 
-El servidor genera o carga el mundo, escucha en el puerto 7777 e imprime su IP local. Los clientes se unen normalmente con esa IP. Para producción, Godot permite exportar un build "dedicated server" para Linux que puedes subir a cualquier VPS.
+El servidor genera o carga el mundo, escucha en el puerto 7777 e imprime su
+IP local. Los clientes se unen normalmente con esa IP.
 
-## 🧪 Checklist de QA — Fases 3-4
+### Validación tras editar `.gd`
 
-**Chunks/streaming:**
-- [ ] Únete como cliente y camina lejos del spawn: el terreno aparece antes de llegar (radio de 2 chunks)
-- [ ] Vuelve sobre tus pasos: los chunks descargados se vuelven a pedir y llegan con los cambios (tiles minados siguen minados)
-- [ ] Al unirte, el jugador queda "congelado" milisegundos hasta que llega su chunk — nunca cae a través del mundo
+```bash
+# Comprobar que el proyecto parsea sin errores
+godot --headless --path . --quit-after 2
 
-**Herramientas/crafting:**
-- [ ] Minar piedra a mano (5 golpes) vs con pico de piedra (2 golpes)
-- [ ] Intentar fabricar sin materiales → toast de error, nada se consume
-- [ ] Cliente y host fabrican a la vez → ambos inventarios correctos
-
-**NPCs/combate:**
-- [ ] Un slime te persigue si te acercas a menos de ~10 tiles y deambula si te alejas
-- [ ] Morir por slimes → respawn en superficie con 100 HP
-- [ ] Matar un slime desde el cliente → el mineral llega a TU inventario
-- [ ] Máximo 5 slimes vivos a la vez
-
-**Persistencia/servidor:**
-- [ ] Mina algo, cierra el host, "Continuar partida" → el mundo conserva los cambios
-- [ ] Corre el servidor dedicado, conecta 2 clientes, ciérralos y reconéctalos
-- [ ] El autosave del dedicado imprime "[SERVIDOR] Partida guardada" cada 60 s
-
-## 📐 Decisiones de arquitectura de estas fases
-
-**Streaming en vez de snapshot completo.** Antes el servidor enviaba todo el mundo al unirse; con 9600 tiles eso ya no escala. Ahora el cliente pide chunks bajo demanda y los descarta al alejarse — exactamente el modelo del GDD §2.3, y la base para mundos mucho más grandes.
-
-**El servidor decide el daño del pico.** El cliente nunca dice "tengo pico dorado": solo dice "golpeé este tile". El servidor consulta el inventario real y aplica el daño correcto. Mismo patrón para el crafting y el combate contra NPCs.
-
-**NPCs 100% del lado del servidor.** Los clientes ni siquiera tienen la lógica de FSM: reciben posiciones y dibujan. Imposible de hackear y trivial de extender con más tipos de enemigos.
-
-**Qué quedó fuera (deliberadamente) para Fase 5:** matchmaking y cuentas de usuario (requieren backend externo — los inventarios por jugador persistentes dependen de esto, porque los peer-ids cambian entre sesiones), y predicción/reconciliación de movimiento (solo necesaria si movemos la simulación del jugador al servidor, el paso final de anti-cheat).
+# Smoke test headless (crafting, HUD, defensa, run, bestiario) — exit 0 = OK
+godot --headless --path . res://tests/smoke_craft.tscn --quit-after 10
+```
 
 ## 📦 Estructura
 
 ```
 /project.godot
 /scenes/main.tscn
+/tests/
+  smoke_craft.tscn + smoke_craft.gd   Smoke test headless (32 grupos de prueba)
 /scripts/
-  network_manager.gd     Autoload "Net" — conexiones ENet
-  main.gd                Lobby, HUD, crafting, vida, persistencia, scheduler, modo dedicado
-  world.gd               Chunks, streaming, HP de tiles, meteoros, validaciones
-  chunk_renderer.gd      Dibujo por chunk con grietas
-  npc_manager.gd         Slimes: FSM + física + combate (servidor)
-  player.gd              Física AABB, gate de streaming, input, combate
-  virtual_joystick.gd    Joystick dinámico multi-touch
+  network_manager.gd   Autoload "Net" — host/join ENet, señales de conexión
+  sfx.gd               Autoload "Sfx" — SFX y música procedurales (cosmético, local)
+  atlas.gd             Autoload "Atlas" — sprites/texturas generados por código
+  fx.gd                Partículas, textos flotantes, anillos de impacto, ambiente
+  main.gd              Lobby, HUD, crafting, ciclo día/noche, estructura de run,
+                        persistencia, monetización, scheduler, modo --server
+  world.gd             Tiles, chunks/streaming, generación (cuevas + islas),
+                        HP por tile, minado/colocación, meteoro, nidos (T_NEST)
+  npc_manager.gd       Enemigos: FSM, oleadas nocturnas, roster de jefes,
+                        excavación, embestida, fusión de slimes, nidos
+  tower_manager.gd     Torre de flechas (simulación 100% en servidor)
+  player.gd            Física AABB, cámara, input (joystick táctil + teclado), combate
+  chunk_renderer.gd    Dibujo por chunk: grietas, decoración, fogata viva
+  virtual_joystick.gd  Joystick dinámico multi-touch
 ```
+
+## 📚 Documentación
+
+- [`CLAUDE.md`](CLAUDE.md) — arquitectura (autoridad del servidor, patrón de
+  RPCs, mundo como datos puros, chunks, NPCs), convenciones y trampas conocidas.
+- [`ROADMAP.md`](ROADMAP.md) — plan por fases, qué se hizo en cada una y qué
+  falta (Fase 11+, deuda técnica).
+- [`MONETIZACION.md`](MONETIZACION.md) — plan de negocio y camino a cobrar
+  dinero real.
+- [`GDD - Núcleo del Mundo (1).md`](<GDD - Núcleo del Mundo (1).md>) — diseño
+  técnico de referencia de los sistemas base.
+- [`Evolución de la Visión del Proyecto.md`](<Evolución de la Visión del Proyecto.md>)
+  — historia de cómo cambió la visión del proyecto hasta la identidad actual.
