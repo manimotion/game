@@ -23,6 +23,7 @@ const SPAWN_EVERY := 15.0
 const BLOCK_CD := 1.0          # cooldown de ataque a tiles (Fase 7)
 const SPIKE_DAMAGE := 25       # daño de la trampa de pinchos por contacto (Fase 8)
 const SPIKE_CD := 0.5          # cooldown del daño de pinchos (mientras está sobre la trampa)
+const BOSS_EVERY := 5          # cada cuántas noches aparece un jefe (Fase 9)
 
 # Variantes de NPC: stats + botín + tamaño visual (la colisión usa
 # SIZE para todas — solo cambia el dibujo). "fly" = vuela sin
@@ -36,6 +37,8 @@ const KINDS := {
 		"w": 30.0, "h": 24.0, "color": Color("f0c040")},
 	"murcielago": {"hp": 45, "dmg": 6, "speed": 150.0, "coins": 4, "ore": 0,
 		"w": 32.0, "h": 18.0, "color": Color("6b5b8e"), "fly": true},
+	"jefe": {"hp": 500, "dmg": 18, "speed": 65.0, "coins": 50, "ore": 6,
+		"w": 64.0, "h": 50.0, "color": Color("d6453f")},
 }
 
 # Servidor: id -> {pos, vel, hp, kind, cool, jump_t}
@@ -245,12 +248,16 @@ func _spawn_one(kind: String, near: Node2D) -> void:
 
 ## Oleada nocturna (Fase 6): la dispara _set_phase (main.gd) al caer
 ## la noche. Crece con el número de noche: 3 + noche enemigos.
+## Fase 9: cada BOSS_EVERY noches se suma un "jefe", fuera del WAVE_CAP
+## (evento especial — main.gd anuncia su llegada con un toast).
 func night_wave(night: int) -> bool:
 	if not multiplayer.is_server() or main.players.is_empty() or main.world == null:
 		return false
 	var count := mini(3 + night, WAVE_CAP - npcs.size())
 	for i in maxi(count, 0):
 		_spawn_one(_roll_kind_night(night), main.players.values().pick_random())
+	if night % BOSS_EVERY == 0:
+		_spawn_one("jefe", main.players.values().pick_random())
 	return count > 0
 
 

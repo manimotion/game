@@ -381,6 +381,60 @@ func _ready() -> void:
 	w2.tiles.erase(tower_c)
 	npcs_node.npcs.clear()
 
+	# ---- TEST 21: FASE 9 — el jefe aparece cada BOSS_EVERY noches ----
+	_check("KINDS incluye al jefe", npcs_node.KINDS.has("jefe"))
+	_check("Atlas tiene textura del jefe", Atlas.slimes.has("jefe"))
+	npcs_node.npcs.clear()
+	npcs_node.night_wave(npcs_node.BOSS_EVERY)
+	var has_boss := false
+	for nid: int in npcs_node.npcs:
+		if npcs_node.npcs[nid].kind == "jefe":
+			has_boss = true
+	print("[21] enemigos en la oleada de la noche %d:" % npcs_node.BOSS_EVERY, npcs_node.npcs.size(), "| jefe:", has_boss)
+	_check("la oleada de la noche %d incluye un jefe" % npcs_node.BOSS_EVERY, has_boss)
+	npcs_node.npcs.clear()
+
+	# ---- TEST 22: FASE 9 — recompensa de Núcleos al amanecer ----
+	main.game_mode = "sandbox"
+	main.night_number = 3
+	var coins_before22: int = int(main._profile_of(1).coins)
+	main._set_phase(false)
+	var reward22: int = main.NIGHT_REWARD_BASE + main.NIGHT_REWARD_STEP * 3
+	print("[22] Núcleos antes/después del amanecer:", coins_before22, "->", int(main._profile_of(1).coins))
+	_check("amanecer recompensa Núcleos por noche sobrevivida (+%d)" % reward22,
+		int(main._profile_of(1).coins) == coins_before22 + reward22)
+
+	# ---- TEST 23: FASE 9 — victoria al completar SURVIVAL_NIGHTS ----
+	main.game_mode = "survival"
+	main.night_number = main.SURVIVAL_NIGHTS
+	main._run_over = false
+	main._run_panel.hide()
+	var coins_before23: int = int(main._profile_of(1).coins)
+	main._set_phase(false)
+	var reward23: int = main.NIGHT_REWARD_BASE + main.NIGHT_REWARD_STEP * main.SURVIVAL_NIGHTS
+	print("[23] panel:", main._run_title.text, "|", main._run_body.text)
+	_check("victoria al sobrevivir %d noches muestra el panel de fin de run" % main.SURVIVAL_NIGHTS,
+		main._run_panel.visible and "VICTORIA" in main._run_title.text)
+	_check("victoria otorga la recompensa de la noche + bono de %d Núcleos" % main.VICTORY_BONUS,
+		int(main._profile_of(1).coins) == coins_before23 + reward23 + main.VICTORY_BONUS)
+	_check("la run vuelve a modo sandbox tras la victoria",
+		main.game_mode == "sandbox" and main.night_number == 0 and not main.is_night)
+
+	# ---- TEST 24: FASE 9 — morir en supervivencia termina la run ----
+	main.game_mode = "survival"
+	main.night_number = 4
+	main._run_over = false
+	main._run_panel.hide()
+	main.player_hp[1] = 30
+	main.damage_player(1, 999)
+	print("[24] HP tras golpe letal:", main.player_hp[1], "| panel:", main._run_title.text)
+	_check("morir en supervivencia muestra el panel 'FIN DE LA RUN'",
+		main._run_panel.visible and "FIN DE LA RUN" in main._run_title.text)
+	_check("la run reaparece al jugador con vida llena",
+		int(main.player_hp[1]) == main.PLAYER_MAX_HP)
+	_check("la run vuelve a modo sandbox tras la derrota",
+		main.game_mode == "sandbox" and main.night_number == 0)
+
 	# ---- TEST 13: arte y efectos nuevos ----
 	_check("Atlas genera 4 decoraciones de superficie", Atlas.deco.size() == 4)
 	var dl: float = main.world.daylight()

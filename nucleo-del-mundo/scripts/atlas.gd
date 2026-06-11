@@ -177,6 +177,7 @@ func _ready() -> void:
 	slimes["grande"] = _make_slime(Color("8a4ad0"), Color("5c2f96"), Color("c9a0f0"))
 	slimes["dorado"] = _make_slime(P_GOLD, P_GOLD_D, P_GOLD_L)
 	slimes["murcielago"] = _make_bat()
+	slimes["jefe"] = _make_slime(Color("d6453f"), Color("7a1f1c"), Color("ffd9a0"))
 	sky_tex = _make_gradient(C_SKY_TOP, C_SKY_BOT)
 	under_tex = _make_gradient(C_UNDER_TOP, C_UNDER_BOT)
 	cloud_tex = _make_cloud()

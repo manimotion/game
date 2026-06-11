@@ -67,6 +67,11 @@ const NIGHT_SECONDS := 90.0  # duración de la noche
 const DUSK_WARN := 30.0      # aviso de atardecer
 const SURVIVAL_NIGHTS := 7   # objetivo del modo supervivencia
 
+# Fase 9 — estructura de run: recompensa por noche y bono de victoria
+const NIGHT_REWARD_BASE := 10  # Núcleos al amanecer por sobrevivir una noche
+const NIGHT_REWARD_STEP := 5   # + esto por cada número de noche (escala el riesgo)
+const VICTORY_BONUS := 100     # Núcleos extra al completar el modo supervivencia
+
 # MONETIZACIÓN — catálogo de skins (solo cosmético, nunca pay-to-win).
 # El SERVIDOR valida compra/equipamiento (§16); el cliente solo pide.
 # "default" usa el color por jugador de siempre. "anim" = color animado.
@@ -127,6 +132,7 @@ var is_night := false
 var night_number := 0               # noches iniciadas (0 = aún no anochece)
 var _phase_t := DAY_SECONDS         # tiempo restante de la fase actual
 var _dusk_warned := false
+var _run_over := false              # evita que _end_run() se dispare dos veces (Fase 9)
 
 var _ui: CanvasLayer
 var _menu: PanelContainer
@@ -151,6 +157,9 @@ var _shop_btn: Control = null
 var _shop_panel: Control = null
 var _shop_title: Label = null
 var _shop_rows: Dictionary = {}     # skin_id -> Button
+var _run_panel: Control = null      # pantalla de fin de run (Fase 9)
+var _run_title: Label = null
+var _run_body: Label = null
 
 
 func _ready() -> void:
@@ -641,6 +650,17 @@ func damage_player(peer_id: int, dmg: int) -> void:
 	dmg = maxi(1, dmg - get_armor_reduction(peer_id))   # la armadura amortigua
 	var hp: int = player_hp.get(peer_id, PLAYER_MAX_HP) - dmg
 	if hp <= 0:
+		if game_mode == "survival":
+			# Fase 9: morir en supervivencia termina la run (sin respawn).
+			hp = 0
+			player_hp[peer_id] = hp
+			if peer_id == 1:
+				if not dedicated:
+					_set_hp(hp)
+			else:
+				update_health.rpc_id(peer_id, hp)
+			_end_run(false)
+			return
 		hp = PLAYER_MAX_HP
 		# Respawn en la fogata más cercana (Fase 7), o en la superficie
 		var camp: Vector2 = world.nearest_campfire_pos(players[peer_id].position)
@@ -725,11 +745,17 @@ func _set_phase(night: bool) -> void:
 		var npcs_node: Node2D = get_node_or_null("NPCs")
 		if npcs_node != null:
 			npcs_node.night_wave(night_number)
+			if night_number % npcs_node.BOSS_EVERY == 0:
+				_broadcast_toast("👹 ¡Un jefe ha llegado! (Noche %d)" % night_number)
 	else:
 		if night_number > 0:
 			_broadcast_toast("☀️ Amaneció — sobreviviste la noche %d" % night_number)
+			var reward := NIGHT_REWARD_BASE + NIGHT_REWARD_STEP * night_number
+			for pid: int in players:
+				add_coins(pid, reward)
 		if game_mode == "survival" and night_number == SURVIVAL_NIGHTS:
-			_broadcast_toast("🏆 ¡Sobreviviste las %d noches! Sigue jugando en modo libre" % SURVIVAL_NIGHTS)
+			_end_run(true)
+			return
 	apply_phase.rpc(is_night, night_number, _phase_t, game_mode)
 
 
@@ -765,6 +791,71 @@ func _update_phase_label() -> void:
 		_phase_label.text = "🌙 Noche %d%s — %d:%02d" % [night_number, meta, mm, ss]
 	else:
 		_phase_label.text = "☀️ Día %d — %d:%02d" % [night_number + 1, mm, ss]
+
+
+# -------------------------------------------------------------
+# ESTRUCTURA DE RUN (Fase 9, ROADMAP.md): victoria al sobrevivir
+# SURVIVAL_NIGHTS noches o derrota al morir en supervivencia.
+# SOLO el servidor decide; los clientes reciben run_ended por RPC
+# y vuelven a sandbox vía apply_phase (lo manda _reset_run).
+# -------------------------------------------------------------
+func _end_run(victory: bool) -> void:
+	if not multiplayer.is_server() or _run_over:
+		return
+	_run_over = true
+	var nights := night_number
+	if victory:
+		for pid: int in players:
+			add_coins(pid, VICTORY_BONUS)
+	run_ended.rpc(victory, nights)
+	if not dedicated:
+		_apply_run_ended(victory, nights)
+	_reset_run()
+
+
+@rpc("authority", "call_remote", "reliable")
+func run_ended(victory: bool, nights: int) -> void:
+	_apply_run_ended(victory, nights)
+
+
+func _apply_run_ended(victory: bool, nights: int) -> void:
+	if _run_panel == null:
+		return
+	var recursos := (int(_my_inv.get("dirt", 0)) + int(_my_inv.get("stone", 0))
+		+ int(_my_inv.get("wood", 0)) + int(_my_inv.get("ore", 0)))
+	_run_title.text = "🏆 ¡VICTORIA!" if victory else "💀 FIN DE LA RUN"
+	var body := "Sobreviviste %d noche%s\n📦 Recursos: %d\n🪙 Núcleos: %d" % [
+		nights, "" if nights == 1 else "s", recursos, _my_coins]
+	if victory:
+		body += "\n+%d de bono por la victoria" % VICTORY_BONUS
+	_run_body.text = body
+	_run_panel.show()
+
+
+## Reinicia el reloj de partida y reaparece a todos en modo sandbox
+## (gameplay libre tras ganar o perder una run de supervivencia).
+func _reset_run() -> void:
+	is_night = false
+	night_number = 0
+	_phase_t = DAY_SECONDS
+	_dusk_warned = false
+	game_mode = "sandbox"
+	if npc_mgr != null:
+		npc_mgr.npcs.clear()
+	if tower_mgr != null:
+		tower_mgr.arrows.clear()
+	for pid: int in players:
+		var pos: Vector2 = world.surface_spawn(randi_range(4, world.W - 5))
+		player_hp[pid] = PLAYER_MAX_HP
+		if pid == 1:
+			players[1].position = pos
+			players[1].velocity = Vector2.ZERO
+			if not dedicated:
+				_set_hp(PLAYER_MAX_HP)
+		else:
+			respawn_player.rpc_id(pid, pos)
+			update_health.rpc_id(pid, PLAYER_MAX_HP)
+	apply_phase.rpc(is_night, night_number, _phase_t, game_mode)
 
 
 # -------------------------------------------------------------
@@ -877,7 +968,7 @@ func _on_host_lost() -> void:
 # -------------------------------------------------------------
 ## El jugador ignora toques que caen sobre la interfaz.
 func is_point_on_ui(p: Vector2) -> bool:
-	for ctrl: Control in [_hud_box, _craft_btn, _craft_panel, _shop_btn, _shop_panel, _hp_panel, _toast_panel]:
+	for ctrl: Control in [_hud_box, _craft_btn, _craft_panel, _shop_btn, _shop_panel, _hp_panel, _toast_panel, _run_panel]:
 		if ctrl != null and ctrl.visible and ctrl.get_global_rect().has_point(p):
 			return true
 	return _menu.visible
@@ -1190,6 +1281,38 @@ func _show_hud() -> void:
 		sbtn.pressed.connect(_on_skin_pressed.bind(sid))
 		srow.add_child(sbtn)
 		_shop_rows[sid] = sbtn
+
+	# --- Panel de fin de run (Fase 9): victoria/derrota en supervivencia ---
+	var rpanel := PanelContainer.new()
+	rpanel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	rpanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	rpanel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	rpanel.z_index = 5
+	_style_panel(rpanel)
+	rpanel.hide()
+	_ui.add_child(rpanel)
+	_run_panel = rpanel
+
+	var rbox := VBoxContainer.new()
+	rbox.custom_minimum_size = Vector2(360, 0)
+	rbox.add_theme_constant_override("separation", 14)
+	rpanel.add_child(rbox)
+
+	_run_title = Label.new()
+	_run_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_run_title.add_theme_font_size_override("font_size", 26)
+	rbox.add_child(_run_title)
+
+	_run_body = Label.new()
+	_run_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_run_body.add_theme_font_size_override("font_size", 16)
+	rbox.add_child(_run_body)
+
+	var run_close := Button.new()
+	run_close.text = "Continuar en modo libre"
+	run_close.custom_minimum_size.y = 52
+	run_close.pressed.connect(func(): rpanel.hide())
+	rbox.add_child(run_close)
 
 	_refresh_info()
 	_refresh_shop()

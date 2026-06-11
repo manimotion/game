@@ -6,10 +6,12 @@ supervivencia por noches — de día recolectas y construyes, de noche defiendes
 el objetivo es sobrevivir X noches. La base (murallas, torres, trampas) es una
 vía de progresión tan importante como el equipo. El plan por fases está en
 `ROADMAP.md`; el GDD original sigue siendo la referencia técnica de los sistemas
-base. Estado: Fases 1-8 completadas (core sandbox + monetización + arte/SFX
+base. Estado: Fases 1-9 completadas (core sandbox + monetización + arte/SFX
 procedurales + ciclo día/noche jugable + defensa pasiva con murallas y fogatas
-+ defensa activa con trampas de pinchos y torres de flechas); la Fase 9
-(estructura de run: win/lose, escalado, recompensas) es lo siguiente.
++ defensa activa con trampas de pinchos y torres de flechas + estructura de
+run: jefe cada 5 noches, recompensa de Núcleos por noche, victoria/derrota con
+panel de resumen). La Fase 10+ (campañas/mundos temáticos) está bloqueada hasta
+validar diversión con jugadores reales (ver ROADMAP.md).
 El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
@@ -73,11 +75,17 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   cosmético: nunca viaja por red ni toca estado del juego.
 - `scripts/main.gd` — lobby (modos Supervivencia/Sandbox), HUD (fase del ciclo, barra de
   vida, equipo, toast central con desvanecido), spawn, inventarios (servidor), crafting
-  (equipo único + bloques apilables: muralla/fogata), vida/respawn en fogata más cercana +
-  regeneración nocturna solo cerca de fogata (Fase 7), RELOJ DE PARTIDA día/noche (Fase 6:
-  `is_night`, `night_number`, `_set_phase` dispara `night_wave`; solo el servidor cambia de
-  fase), persistencia (gzip JSON en `user://nucleo_save.json.gz`; las runs de supervivencia
-  NO guardan), scheduler (autosave, meteoro diurno con aviso), modo `--server`.
+  (equipo único + bloques apilables: muralla/fogata/trampa/torre), vida/respawn en fogata
+  más cercana + regeneración nocturna solo cerca de fogata (Fase 7), RELOJ DE PARTIDA
+  día/noche (Fase 6: `is_night`, `night_number`, `_set_phase` dispara `night_wave`; solo
+  el servidor cambia de fase), persistencia (gzip JSON en `user://nucleo_save.json.gz`;
+  las runs de supervivencia NO guardan), scheduler (autosave, meteoro diurno con aviso),
+  modo `--server`.
+  ESTRUCTURA DE RUN (Fase 9): al amanecer (`_set_phase(false)`) reparte Núcleos por noche
+  sobrevivida (`NIGHT_REWARD_BASE`/`NIGHT_REWARD_STEP`); `_end_run(victory)` (guardado por
+  `_run_over`) decide victoria (`night_number == SURVIVAL_NIGHTS`, + `VICTORY_BONUS`) o
+  derrota (muerte en supervivencia, sin respawn) — manda `run_ended.rpc`, muestra
+  `_run_panel` con el resumen y luego `_reset_run()` vuelve todo a sandbox.
   MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles`
   persistidos (v4).
 - `scripts/world.gd` — tiles (incluye T_WALL 400 HP, T_CAMPFIRE 200 HP — Fase 7,
@@ -91,11 +99,12 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
 - `scripts/player.gd` — física AABB, cámara (con `shake()`), input (joystick táctil +
   teclado), combate.
 - `scripts/npc_manager.gd` — enemigos FSM con variantes en `KINDS` (slimes
-  normal/grande/dorado + murciélago volador `fly: true`, nocturno); oleadas nocturnas
-  vía `night_wave(noche)` (3+noche enemigos, escala con la noche); de noche el spawn
-  regular también se acelera. Fase 7: los slimes terrestres golpean bloques sólidos
-  que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`). Fase 8: contacto con
-  `T_SPIKES` aplica `SPIKE_DAMAGE`; `damage_npc()`/`_nearest_player()` son el daño
+  normal/grande/dorado + murciélago volador `fly: true`, nocturno + "jefe" Fase 9);
+  oleadas nocturnas vía `night_wave(noche)` (3+noche enemigos, escala con la noche;
+  cada `BOSS_EVERY=5` noches suma además un "jefe" fuera del `WAVE_CAP`); de noche
+  el spawn regular también se acelera. Fase 7: los slimes terrestres golpean bloques
+  sólidos que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`). Fase 8: contacto
+  con `T_SPIKES` aplica `SPIKE_DAMAGE`; `damage_npc()`/`_nearest_player()` son el daño
   ambiental genérico (sin atacante jugador) que usan trampas y `tower_manager`.
 - `scripts/tower_manager.gd` — torre de flechas (Fase 8), mismo patrón que
   `npc_manager`: el servidor re-escanea `world.tiles` cada `SCAN_EVERY` segundos
@@ -145,7 +154,8 @@ El plan por fases vive en **`ROADMAP.md`** (derivado de la visión de superviven
 por noches). Resumen: Fase 6 ciclo día/noche jugable → Fase 7 defensa pasiva
 (murallas, fogata) → Fase 8 defensa activa (torres, trampas) → Fase 9 estructura
 de run (win/lose, escalado, recompensas) → Fase 10+ campañas y mundos temáticos.
-Fase 9 es lo siguiente.
+Fases 1-9 completas; la Fase 10+ está bloqueada hasta validar diversión con
+jugadores reales.
 
 Vía paralela de negocio (independiente del gameplay, ver MONETIZACION.md):
 backend de cuentas (los `profiles` por nombre migran tal cual, la clave pasa de

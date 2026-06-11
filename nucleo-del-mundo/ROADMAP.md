@@ -81,13 +81,28 @@ runs, no solo sandbox eterno.
    daña NPC por contacto, torre detecta, dispara y daña al enemigo más
    cercano.
 
-## Fase 9 — Estructura de run completa
+## Fase 9 — Estructura de run completa ✅ HECHA (2026-06-11)
 
-1. **Win/lose**: sobrevivir X noches = pantalla de victoria con resumen
-   (noches, recursos, Núcleos); morir en supervivencia = fin de run.
-2. **Escalado por noche**: más slimes, variantes nuevas; jefe cada 5 noches.
-3. **Recompensa**: Núcleos al perfil por noche sobrevivida → engancha con la
-   monetización existente (los Núcleos/skins persisten entre runs).
+1. ✅ **Win/lose**: `_end_run(victory)` en `main.gd` (solo servidor, guardado
+   por `_run_over` para no disparar dos veces). Sobrevivir `SURVIVAL_NIGHTS`
+   (7) = victoria; morir en modo supervivencia (`damage_player` con `hp<=0`)
+   = derrota, sin respawn. Ambos casos muestran `_run_panel` (panel
+   "🏆 ¡VICTORIA!" / "💀 FIN DE LA RUN" con resumen: noches, recursos,
+   Núcleos) vía RPC `run_ended` y luego `_reset_run()` vuelve todo a modo
+   sandbox (reloj a día 1, NPCs/flechas limpios, jugadores con vida llena).
+2. ✅ **Escalado por noche**: `night_wave(noche)` sigue dando 3+noche enemigos;
+   cada `BOSS_EVERY=5` noches se suma además un **"jefe"** (`KINDS["jefe"]`:
+   500 HP, 18 dmg, 65 vel, 50 Núcleos/6 mineral de botín, sprite 64×50
+   reutilizando `_make_slime` con paleta roja). `main.gd` anuncia su llegada
+   con un toast "👹 ¡Un jefe ha llegado!".
+3. ✅ **Recompensa**: al amanecer (`_set_phase(false)`), si `night_number > 0`,
+   todos los jugadores reciben `NIGHT_REWARD_BASE(10) + NIGHT_REWARD_STEP(5)
+   * noche` Núcleos vía `add_coins`. Victoria suma además `VICTORY_BONUS=100`.
+   Los Núcleos persisten en `profiles` (enganchado con la monetización).
+4. ✅ Test headless: `KINDS`/Atlas incluyen "jefe", la oleada de la noche 5
+   incluye un jefe, recompensa de Núcleos al amanecer (+25 en noche 3),
+   victoria al sobrevivir 7 noches (panel + bono + reset a sandbox), derrota
+   en supervivencia (panel + vida llena + reset a sandbox).
 
 ## Fase 10+ — Evolución futura (del doc de visión, NO empezar aún)
 
