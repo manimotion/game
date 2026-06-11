@@ -1,8 +1,13 @@
 # CLAUDE.md — Núcleo del Mundo
 
-Juego sandbox 2D multijugador (estilo Terraria) para Android, en **Godot 4.3+ / GDScript**.
-Basado en el GDD "Núcleo del Mundo". Estado actual: Fases 1-4 completadas + base de
-monetización de Fase 5 (Núcleos, tienda de skins, perfiles por nombre, SFX procedurales).
+Juego sandbox 2D multijugador para Android, en **Godot 4.3+ / GDScript**.
+**Identidad actual** (ver `Evolución de la Visión del Proyecto.md`): sandbox de
+supervivencia por noches — de día recolectas y construyes, de noche defiendes;
+el objetivo es sobrevivir X noches. La base (murallas, torres, trampas) es una
+vía de progresión tan importante como el equipo. El plan por fases está en
+`ROADMAP.md`; el GDD original sigue siendo la referencia técnica de los sistemas
+base. Estado: Fases 1-5 completadas (core sandbox + monetización + arte/SFX
+procedurales); la Fase 6 (ciclo día/noche jugable) es lo siguiente.
 El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
@@ -115,15 +120,16 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 - Los perfiles van por NOMBRE sin contraseña: en LAN cualquiera puede usar tu nombre y
   gastar tus Núcleos. Aceptado hasta el backend de cuentas; NO cobrar dinero real antes.
 
-## Roadmap pendiente (Fase 5+)
+## Roadmap
 
-1. ~~Arte~~ y ~~música~~ base ya están (atlas + sfx procedurales); falta pulir animaciones.
-2. Más variedad de mundo: biomas, estructuras, líquidos.
-3. Tests GUT para `world.gd` (generación, minado, alcance) y física del jugador
-   (el smoke test headless de `tests/smoke_craft.gd` ya cubre la lógica de servidor).
-4. Backend: cuentas + matchmaking. Los `profiles` por nombre migran tal cual (misma
-   estructura, la clave pasa de nombre a uid). Prerrequisito para cobrar dinero real.
-5. Validación de recibos de Google Play en el servidor + paquetes de Núcleos (MONETIZACION.md §3).
-6. Movimiento server-authoritative + predicción/reconciliación (GDD §10.2).
-7. Sistema de energía (§11), más NPCs, eventos adicionales (§9).
-8. Export Android firmado (AAB) para Play Store.
+El plan por fases vive en **`ROADMAP.md`** (derivado de la visión de supervivencia
+por noches). Resumen: Fase 6 ciclo día/noche jugable → Fase 7 defensa pasiva
+(murallas, fogata) → Fase 8 defensa activa (torres, trampas) → Fase 9 estructura
+de run (win/lose, escalado, recompensas) → Fase 10+ campañas y mundos temáticos.
+
+Vía paralela de negocio (independiente del gameplay, ver MONETIZACION.md):
+backend de cuentas (los `profiles` por nombre migran tal cual, la clave pasa de
+nombre a uid) → validación de recibos de Google Play → export AAB firmado.
+
+Deuda técnica pendiente (sin fase asignada): movimiento server-authoritative +
+predicción (GDD §10.2), tests GUT formales, animaciones pulidas.
