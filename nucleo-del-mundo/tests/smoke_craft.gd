@@ -305,6 +305,82 @@ func _ready() -> void:
 	w2.tiles.erase(camp_c)
 	w2.tiles.erase(wall_c)
 
+	# ---- TEST 18: FASE 8 — recetas, tiles y texturas de trampa/torre ----
+	_check("RECIPES tiene trampa y torre",
+		main.RECIPES.has("trampa") and main.RECIPES.has("torre"))
+	_check("trampa NO es sólida y tiene 120 HP",
+		not w2.SOLID.has(w2.T_SPIKES) and w2.HP[w2.T_SPIKES] == 120)
+	_check("torre es sólida con 250 HP",
+		w2.SOLID.has(w2.T_TOWER) and w2.HP[w2.T_TOWER] == 250)
+	_check("Atlas genera texturas de trampa, torre y flecha",
+		Atlas.tiles.has(Atlas.T_SPIKES) and Atlas.tiles.has(Atlas.T_TOWER) and Atlas.arrow_tex != null)
+
+	main.inventories[1] = {"stone": 30, "ore": 19, "wood": 10}
+	main._apply_inventory(main.inventories[1])
+	main._do_craft("trampa", 1)
+	_check("trampa se craftea (consume 10 piedra + 4 mineral)",
+		int(main.inventories[1].get("trampa", 0)) == 1
+		and int(main.inventories[1].get("stone", 0)) == 20
+		and int(main.inventories[1].get("ore", 0)) == 15)
+	main._do_craft("torre", 1)
+	_check("torre se craftea (consume 20 piedra + 10 madera + 15 mineral)",
+		int(main.inventories[1].get("torre", 0)) == 1
+		and int(main.inventories[1].get("stone", 0)) == 0
+		and int(main.inventories[1].get("wood", 0)) == 0
+		and int(main.inventories[1].get("ore", 0)) == 0)
+
+	# ---- TEST 19: FASE 8 — trampa de pinchos daña por contacto ----
+	var spike_y := 45
+	for tx in range(50, 56):
+		for ty in range(spike_y - 2, spike_y + 3):
+			w2.tiles.erase(Vector2i(tx, ty))
+			w2.damage.erase(Vector2i(tx, ty))
+	for tx in range(50, 56):
+		w2.tiles[Vector2i(tx, spike_y + 1)] = w2.T_STONE
+	var spike_c := Vector2i(53, spike_y)
+	w2.tiles[spike_c] = w2.T_SPIKES
+	npcs_node.npcs.clear()
+	npcs_node._spawn_one("normal", wall_p)
+	var sid_spike: int = npcs_node.npcs.keys()[0]
+	npcs_node.npcs[sid_spike].pos = Vector2(float(spike_c.x * w2.TILE + 16), float(spike_c.y * w2.TILE + 22))
+	npcs_node.npcs[sid_spike].vel = Vector2.ZERO
+	npcs_node.npcs[sid_spike].jump_t = 10.0
+	var spike_hp_before: int = int(npcs_node.npcs[sid_spike].hp)
+	npcs_node._simulate(0.033)
+	var spike_hp_after: int = int(npcs_node.npcs.get(sid_spike, {}).get("hp", spike_hp_before))
+	print("[19] HP del NPC sobre la trampa:", spike_hp_before, "->", spike_hp_after)
+	_check("la trampa de pinchos daña al NPC por contacto",
+		spike_hp_after == spike_hp_before - npcs_node.SPIKE_DAMAGE)
+	for tx in range(50, 56):
+		for ty in range(spike_y - 2, spike_y + 3):
+			w2.tiles.erase(Vector2i(tx, ty))
+
+	# ---- TEST 20: FASE 8 — torre de flechas dispara y daña al enemigo ----
+	var tower_c := Vector2i(60, 45)
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			w2.tiles.erase(Vector2i(tower_c.x + dx, tower_c.y + dy))
+	w2.tiles[tower_c] = w2.T_TOWER
+	npcs_node.npcs.clear()
+	npcs_node._spawn_one("normal", wall_p)
+	var tid: int = npcs_node.npcs.keys()[0]
+	var torigin := Vector2(tower_c.x * w2.TILE + w2.TILE * 0.5, tower_c.y * w2.TILE + w2.TILE * 0.25)
+	npcs_node.npcs[tid].pos = torigin + Vector2(96.0, 0.0)
+	npcs_node.npcs[tid].vel = Vector2.ZERO
+	var tower_hp_before: int = int(npcs_node.npcs[tid].hp)
+	main.tower_mgr.towers.clear()
+	main.tower_mgr.arrows.clear()
+	main.tower_mgr._scan_t = 0.0
+	for i in 20:
+		main.tower_mgr._simulate(1.0 / 30.0)
+	var tower_hp_after: int = int(npcs_node.npcs.get(tid, {}).get("hp", tower_hp_before))
+	print("[20] torres detectadas:", main.tower_mgr.towers.size(), " | HP del NPC:", tower_hp_before, "->", tower_hp_after)
+	_check("la torre detecta el tile T_TOWER", main.tower_mgr.towers.has(tower_c))
+	_check("la torre dispara y daña al enemigo más cercano",
+		tower_hp_after == tower_hp_before - main.tower_mgr.ARROW_DAMAGE)
+	w2.tiles.erase(tower_c)
+	npcs_node.npcs.clear()
+
 	# ---- TEST 13: arte y efectos nuevos ----
 	_check("Atlas genera 4 decoraciones de superficie", Atlas.deco.size() == 4)
 	var dl: float = main.world.daylight()

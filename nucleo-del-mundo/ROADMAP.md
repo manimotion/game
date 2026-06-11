@@ -59,14 +59,27 @@ runs, no solo sandbox eterno.
 5. ✅ Test headless: muralla absorbe 8 dmg del slime (392/400), regen nocturna
    solo cerca de fogata, regen diurna global, respawn en fogata.
 
-## Fase 8 — Defensa activa (torres y trampas) 🎯 SIGUIENTE
+## Fase 8 — Defensa activa (torres y trampas) ✅ HECHA (2026-06-11)
 
-1. **Torre de flechas**: entidad simulada en servidor (mismo patrón que
-   `npc_manager`: estado en servidor, snapshot 10 Hz, clientes dibujan).
-   Dispara al enemigo más cercano en rango; proyectil server-side.
-2. **Trampa de pinchos**: tile que daña NPCs por contacto (server).
-3. Costos altos en mineral/Núcleos de juego → sumidero de recursos que da
-   propósito al minado profundo (cuevas) y a las islas.
+1. ✅ **Torre de flechas** (`T_TOWER`, 250 HP, sólida): entidad simulada en
+   servidor (`tower_manager.gd`, mismo patrón que `npc_manager`). Re-escanea
+   `world.tiles` cada segundo, dispara al enemigo más cercano en rango
+   (320px) con cooldown de 1.2s; flechas server-side a 480px/s, snapshot
+   `(pos, dir)` a 10 Hz, los clientes solo dibujan con `Atlas.arrow_tex`.
+2. ✅ **Trampa de pinchos** (`T_SPIKES`, 120 HP, NO sólida): los NPCs
+   terrestres que la pisan reciben 25 de daño con cooldown de 0.5s
+   (`npc_manager._simulate`).
+3. ✅ Daño ambiental sin atacante jugador: `npc_manager.damage_npc()` (usado
+   por trampas y flechas) entrega el botín al jugador más cercano
+   (`_nearest_player`).
+4. ✅ Costos altos en mineral: trampa = 10 piedra + 4 mineral; torre = 20
+   piedra + 10 madera + 15 mineral → sumidero de recursos que da propósito
+   al minado profundo (cuevas) y a las islas.
+5. ✅ Texturas pixel-art en atlas.gd (pinchos metálicos, torre de vigía con
+   tronera, proyectil de flecha).
+6. ✅ Test headless: recetas/costos, tiles (HP, sólido/no sólido), trampa
+   daña NPC por contacto, torre detecta, dispara y daña al enemigo más
+   cercano.
 
 ## Fase 9 — Estructura de run completa
 

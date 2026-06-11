@@ -32,15 +32,17 @@ const T_WOOD := 5             # tronco — decorativo, no colisiona
 const T_LEAF := 6             # hojas — decorativo, no colisiona
 const T_WALL := 7             # muralla craftable — sólida (Fase 7)
 const T_CAMPFIRE := 8         # fogata — respawn + regen, no sólida (Fase 7)
+const T_SPIKES := 9           # trampa de pinchos — daña NPCs por contacto (Fase 8)
+const T_TOWER := 10           # torre de flechas — sólida, dispara sola (Fase 8)
 
 # GDD §3.2: HP y drop por tipo de tile
 const HP := {T_DIRT: 40, T_STONE: 100, T_ORE: 140, T_WOOD: 60, T_LEAF: 20,
-	T_WALL: 400, T_CAMPFIRE: 200}
+	T_WALL: 400, T_CAMPFIRE: 200, T_SPIKES: 120, T_TOWER: 250}
 const DROPS := {T_DIRT: "dirt", T_STONE: "stone", T_ORE: "ore", T_WOOD: "wood",
-	T_WALL: "muralla", T_CAMPFIRE: "fogata"}
+	T_WALL: "muralla", T_CAMPFIRE: "fogata", T_SPIKES: "trampa", T_TOWER: "torre"}
 const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD,
-	"muralla": T_WALL, "fogata": T_CAMPFIRE}
-const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true}
+	"muralla": T_WALL, "fogata": T_CAMPFIRE, "trampa": T_SPIKES, "torre": T_TOWER}
+const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true, T_TOWER: true}
 
 const REACH := 200.0          # alcance validado por el servidor
 

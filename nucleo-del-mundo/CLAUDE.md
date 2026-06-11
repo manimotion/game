@@ -6,9 +6,10 @@ supervivencia por noches — de día recolectas y construyes, de noche defiendes
 el objetivo es sobrevivir X noches. La base (murallas, torres, trampas) es una
 vía de progresión tan importante como el equipo. El plan por fases está en
 `ROADMAP.md`; el GDD original sigue siendo la referencia técnica de los sistemas
-base. Estado: Fases 1-7 completadas (core sandbox + monetización + arte/SFX
-procedurales + ciclo día/noche jugable + defensa pasiva con murallas y fogatas);
-la Fase 8 (defensa activa: torres y trampas) es lo siguiente.
+base. Estado: Fases 1-8 completadas (core sandbox + monetización + arte/SFX
+procedurales + ciclo día/noche jugable + defensa pasiva con murallas y fogatas
++ defensa activa con trampas de pinchos y torres de flechas); la Fase 9
+(estructura de run: win/lose, escalado, recompensas) es lo siguiente.
 El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
@@ -79,8 +80,9 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   NO guardan), scheduler (autosave, meteoro diurno con aviso), modo `--server`.
   MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles`
   persistidos (v4).
-- `scripts/world.gd` — tiles (incluye T_WALL 400 HP y T_CAMPFIRE 200 HP — Fase 7),
-  chunks/streaming, HP por tile, minado/colocación, `damage_tile()` para daño de NPCs,
+- `scripts/world.gd` — tiles (incluye T_WALL 400 HP, T_CAMPFIRE 200 HP — Fase 7,
+  T_SPIKES 120 HP no sólida y T_TOWER 250 HP sólida — Fase 8), chunks/streaming,
+  HP por tile, minado/colocación, `damage_tile()` para daño de NPCs,
   `nearest_campfire_pos()`, generación con cuevas (ruido 2D) e islas flotantes, luz
   día/noche (`daylight()` delega en el reloj de partida de main.gd), meteoro (FX de
   impacto + sacudida de cámara), validaciones de alcance.
@@ -92,7 +94,15 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   normal/grande/dorado + murciélago volador `fly: true`, nocturno); oleadas nocturnas
   vía `night_wave(noche)` (3+noche enemigos, escala con la noche); de noche el spawn
   regular también se acelera. Fase 7: los slimes terrestres golpean bloques sólidos
-  que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`).
+  que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`). Fase 8: contacto con
+  `T_SPIKES` aplica `SPIKE_DAMAGE`; `damage_npc()`/`_nearest_player()` son el daño
+  ambiental genérico (sin atacante jugador) que usan trampas y `tower_manager`.
+- `scripts/tower_manager.gd` — torre de flechas (Fase 8), mismo patrón que
+  `npc_manager`: el servidor re-escanea `world.tiles` cada `SCAN_EVERY` segundos
+  buscando `T_TOWER`, dispara con cooldown al enemigo más cercano en rango
+  (`_nearest_enemy`) y simula las flechas (`arrows`) hasta impactar
+  (`npc_mgr.damage_npc`) o agotar su vida útil; snapshot `(pos, dir)` a 10 Hz vía
+  `sync_arrows`, los clientes solo dibujan con `Atlas.arrow_tex`.
 - `scripts/virtual_joystick.gd` — joystick multi-touch; consume sus toques con
   `set_input_as_handled()` para no interferir con minar.
 - `scripts/chunk_renderer.gd` — dibujo por chunk con grietas de daño y decoración
@@ -108,7 +118,7 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 - RPCs: `reliable` para acciones/estado, `unreliable_ordered` solo para posiciones.
 - Items son strings: materiales (`dirt`, `stone`, `wood`, `ore`), equipo craftable
   (`pico_*`, `espada_*`, `armadura_*` — únicos, max 1) y bloques craftables apilables
-  (`muralla`, `fogata` — se colocan con ITEM_TILE).
+  (`muralla`, `fogata`, `trampa`, `torre` — se colocan con ITEM_TILE).
   Picos minan (`TOOL_DAMAGE`), espadas pegan a NPCs (`WEAPON_DAMAGE`), armaduras
   reducen daño recibido (`ARMOR_REDUCTION`); el servidor consulta el inventario real.
 - Skins son strings (claves de `SKINS` en main.gd). Los Núcleos NO son item de inventario:
@@ -135,6 +145,7 @@ El plan por fases vive en **`ROADMAP.md`** (derivado de la visión de superviven
 por noches). Resumen: Fase 6 ciclo día/noche jugable → Fase 7 defensa pasiva
 (murallas, fogata) → Fase 8 defensa activa (torres, trampas) → Fase 9 estructura
 de run (win/lose, escalado, recompensas) → Fase 10+ campañas y mundos temáticos.
+Fase 9 es lo siguiente.
 
 Vía paralela de negocio (independiente del gameplay, ver MONETIZACION.md):
 backend de cuentas (los `profiles` por nombre migran tal cual, la clave pasa de

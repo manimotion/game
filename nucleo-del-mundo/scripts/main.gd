@@ -25,11 +25,12 @@ const PlayerScript := preload("res://scripts/player.gd")
 const WorldScript := preload("res://scripts/world.gd")
 const JoystickScript := preload("res://scripts/virtual_joystick.gd")
 const NpcScript := preload("res://scripts/npc_manager.gd")
+const TowerScript := preload("res://scripts/tower_manager.gd")
 
 const SAVE_PATH := "user://nucleo_save.json.gz"
 
 const ITEM_NAMES := {"dirt": "Tierra", "stone": "Piedra", "wood": "Madera", "ore": "Mineral",
-	"muralla": "Muralla", "fogata": "Fogata"}
+	"muralla": "Muralla", "fogata": "Fogata", "trampa": "Trampa", "torre": "Torre"}
 
 # GDD §8.1 — recetas: picos (minan), espadas (combate) y armaduras
 # (reducen daño). Los diccionarios *_DAMAGE/_REDUCTION van del mejor
@@ -46,6 +47,8 @@ const RECIPES := {
 	"armadura_dorada": {"nombre": "Armadura dorada", "costo": {"stone": 10, "ore": 15}},
 	"muralla": {"nombre": "Muralla", "costo": {"stone": 6}},
 	"fogata": {"nombre": "Fogata", "costo": {"wood": 8, "stone": 4}},
+	"trampa": {"nombre": "Trampa de pinchos", "costo": {"stone": 10, "ore": 4}},
+	"torre": {"nombre": "Torre de flechas", "costo": {"stone": 20, "wood": 10, "ore": 15}},
 }
 const TOOL_DAMAGE := {"pico_dorado": 100, "pico_piedra": 60, "pico_madera": 35}
 const WEAPON_DAMAGE := {"espada_dorada": 60, "espada_piedra": 38, "espada_madera": 24}
@@ -89,6 +92,8 @@ const SKINS := {
 const COIN_ORE := 2          # Núcleos por minar un tile de mineral
 
 var world: Node2D = null
+var npc_mgr: Node2D = null           # NPCs (npc_manager.gd) — Fase 8: lo usa tower_manager
+var tower_mgr: Node2D = null         # Towers (tower_manager.gd) — Fase 8
 var players: Dictionary = {}        # peer_id -> Player (todos los peers)
 var inventories: Dictionary = {}    # peer_id -> {item: qty}   (SOLO servidor)
 var player_hp: Dictionary = {}      # peer_id -> hp            (SOLO servidor)
@@ -307,6 +312,13 @@ func _start_game() -> void:
 	npcs.set_script(NpcScript)
 	npcs.name = "NPCs"
 	add_child(npcs)
+	npc_mgr = npcs
+
+	var towers := Node2D.new()
+	towers.set_script(TowerScript)
+	towers.name = "Towers"
+	add_child(towers)
+	tower_mgr = towers
 
 	if not dedicated:
 		_show_hud()
@@ -1053,7 +1065,7 @@ func _show_hud() -> void:
 	hud.add_child(slots)
 
 	var group := ButtonGroup.new()
-	for item: String in ["dirt", "stone", "wood", "muralla", "fogata"]:
+	for item: String in ["dirt", "stone", "wood", "muralla", "fogata", "trampa", "torre"]:
 		var b := Button.new()
 		b.toggle_mode = true
 		b.button_group = group

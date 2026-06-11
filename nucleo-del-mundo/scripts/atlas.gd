@@ -23,6 +23,8 @@ const T_WOOD := 5
 const T_LEAF := 6
 const T_WALL := 7
 const T_CAMPFIRE := 8
+const T_SPIKES := 9
+const T_TOWER := 10
 
 # ---- PALETA (tierras cálidas + verdes naturales, saturación contenida) ----
 const P_DIRT := Color("9b6a42")
@@ -53,6 +55,9 @@ const P_FIRE_L := Color("f0d868")
 const P_FIRE_D := Color("c04020")
 const P_LOG := Color("5a3a1e")
 const P_LOG_D := Color("3e2a14")
+const P_SPIKE := Color("c4c8d4")
+const P_SPIKE_D := Color("4a4a55")
+const P_SPIKE_L := Color("eef0f6")
 
 const C_SKY_TOP := Color("3e7fc9")
 const C_SKY_BOT := Color("a8d8f0")
@@ -142,10 +147,11 @@ var under_tex: GradientTexture2D
 var cloud_tex: ImageTexture
 var hill_far_tex: ImageTexture
 var hill_near_tex: ImageTexture
+var arrow_tex: ImageTexture    # proyectil de la torre de flechas (Fase 8)
 
 
 func _ready() -> void:
-	for t in [T_DIRT, T_STONE, T_ORE, T_BEDROCK, T_WOOD, T_LEAF, T_WALL, T_CAMPFIRE]:
+	for t in [T_DIRT, T_STONE, T_ORE, T_BEDROCK, T_WOOD, T_LEAF, T_WALL, T_CAMPFIRE, T_SPIKES, T_TOWER]:
 		tiles[t] = []
 		for v in VARIANTS:
 			tiles[t].append(_make_tile(t, v))
@@ -176,6 +182,7 @@ func _ready() -> void:
 	cloud_tex = _make_cloud()
 	hill_far_tex = _make_hills(C_HILL_FAR, 11)
 	hill_near_tex = _make_hills(C_HILL_NEAR, 23)
+	arrow_tex = _make_arrow()
 
 
 ## Textura del tile en coord: variante estable por posición (look natural).
@@ -218,7 +225,7 @@ func _make_tile(t: int, v: int) -> ImageTexture:
 		for x in PX:
 			img.set_pixel(x, y, _tile_pixel(t, v, x, y))
 	match t:
-		T_DIRT, T_STONE, T_ORE, T_LEAF, T_WALL:
+		T_DIRT, T_STONE, T_ORE, T_LEAF, T_WALL, T_TOWER:
 			_bevel(img)
 	# color promedio (para las partículas de minado)
 	for y in PX:
@@ -304,6 +311,27 @@ func _tile_pixel(t: int, v: int, x: int, y: int) -> Color:
 					return P_FIRE
 				return P_FIRE_D
 			return Color.TRANSPARENT
+		T_SPIKES:
+			# Trampa de pinchos: picos de metal sobre base oscura (Fase 8)
+			if y >= 13:
+				return P_SPIKE_D
+			var heights := [3, 9, 13, 9, 3]
+			var height: int = heights[x % 5]
+			if y >= 13 - height:
+				return P_SPIKE_L if x % 5 == 2 else P_SPIKE
+			return Color.TRANSPARENT
+		T_TOWER:
+			# Torre de flechas: puesto de vigía de madera + tronera sobre base de piedra (Fase 8)
+			if y < 5:
+				if x >= 6 and x <= 9 and y >= 2:
+					return C_UNDER_TOP
+				return P_LOG if (x + y) % 3 != 0 else P_LOG_D
+			var row := (y - 5) / 4
+			var off := 4 if row % 2 != 0 else 0
+			var bx := (x + off) % 8
+			if (y - 5) % 4 == 0 or bx == 0:
+				return P_WALL_D
+			return P_WALL.lerp(P_WALL_L, n * 0.3)
 	return P_DIRT
 
 
@@ -456,6 +484,20 @@ func _make_bat() -> ImageTexture:
 				"W": img.set_pixel(x, y, Color("4a3d66"))
 				"B": img.set_pixel(x, y, Color("6b5b8e"))
 				"E": img.set_pixel(x, y, Color("ff4040"))
+	return ImageTexture.create_from_image(img)
+
+
+## Flecha de la torre (Fase 8): asta de madera + punta de piedra + plumas.
+func _make_arrow() -> ImageTexture:
+	var img := Image.create(10, 4, false, Image.FORMAT_RGBA8)
+	for x in 10:
+		img.set_pixel(x, 1, P_LOG)
+		img.set_pixel(x, 2, P_LOG_D)
+	for x in [8, 9]:
+		for y in 4:
+			img.set_pixel(x, y, P_SPIKE)
+	img.set_pixel(0, 0, P_WALL_L)
+	img.set_pixel(0, 3, P_WALL_L)
 	return ImageTexture.create_from_image(img)
 
 

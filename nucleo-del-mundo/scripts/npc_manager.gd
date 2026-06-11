@@ -21,6 +21,8 @@ const CONTACT_COOLDOWN := 0.8
 const HIT_REACH := 200.0
 const SPAWN_EVERY := 15.0
 const BLOCK_CD := 1.0          # cooldown de ataque a tiles (Fase 7)
+const SPIKE_DAMAGE := 25       # daño de la trampa de pinchos por contacto (Fase 8)
+const SPIKE_CD := 0.5          # cooldown del daño de pinchos (mientras está sobre la trampa)
 
 # Variantes de NPC: stats + botín + tamaño visual (la colisión usa
 # SIZE para todas — solo cambia el dibujo). "fly" = vuela sin
@@ -163,6 +165,17 @@ func _simulate(delta: float) -> void:
 					n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
 			n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
 		_move(n, delta, w)
+
+		# Fase 8: trampa de pinchos — daña a los NPCs terrestres que la pisan
+		if not bool(k.get("fly", false)):
+			n.spike_cd = maxf(0.0, n.get("spike_cd", 0.0) - delta)
+			if n.spike_cd <= 0.0:
+				var under := Vector2i(floori(n.pos.x / w.TILE), floori((n.pos.y + SIZE.y * 0.5 - 1.0) / w.TILE))
+				if w.tiles.get(under, 0) == w.T_SPIKES:
+					n.spike_cd = SPIKE_CD
+					damage_npc(id, SPIKE_DAMAGE)
+					if not npcs.has(id):
+						continue
 
 		# Fase 7: NPCs terrestres golpean el bloque que les cierra el
 		# paso hacia el jugador (murallas, terreno). Los voladores lo
@@ -327,6 +340,40 @@ func _do_hit(id: int, attacker: int) -> void:
 		main.add_coins(attacker, int(k.coins))   # MONETIZACIÓN: Núcleos
 	elif main.world != null and main.world.fx != null:
 		main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)   # flash de golpe
+
+
+# -------------------------------------------------------------
+# DAÑO AMBIENTAL (Fase 8): trampas de pinchos y torres de flechas
+# matan sin "atacante" jugador. El botín va al jugador más cercano.
+# -------------------------------------------------------------
+func damage_npc(id: int, dmg: int) -> void:
+	if not npcs.has(id):
+		return
+	npcs[id].hp -= dmg
+	if npcs[id].hp <= 0:
+		var k := _kind_of(npcs[id])
+		var pos: Vector2 = npcs[id].pos
+		if main.world != null and main.world.fx != null:
+			main.world.fx.burst(pos, k.color, 16)
+		npcs.erase(id)
+		var nearest := _nearest_player(pos)
+		if nearest != -1:
+			for i in int(k.ore):
+				main.add_item(nearest, "ore")
+			main.add_coins(nearest, int(k.coins))
+	elif main.world != null and main.world.fx != null:
+		main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)
+
+
+func _nearest_player(pos: Vector2) -> int:
+	var best := 1e9
+	var best_id := -1
+	for pid: int in main.players:
+		var d: float = main.players[pid].position.distance_to(pos)
+		if d < best:
+			best = d
+			best_id = pid
+	return best_id
 
 
 # -------------------------------------------------------------
