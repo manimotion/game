@@ -38,7 +38,6 @@ const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD}
 const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true}
 
 const REACH := 200.0          # alcance validado por el servidor
-const DAY_LEN := 280.0        # segundos de un ciclo día+noche completo
 
 var tiles: Dictionary = {}         # coord -> tipo (servidor: mundo completo)
 var damage: Dictionary = {}        # coord -> HP restante (SOLO servidor)
@@ -69,16 +68,20 @@ func _process(delta: float) -> void:
 
 
 # -------------------------------------------------------------
-# CICLO DÍA/NOCHE (solo visual): usa la hora del sistema, así
-# todos los peers ven la misma fase sin tráfico de red.
+# CICLO DÍA/NOCHE: desde la Fase 6 la luz la gobierna el RELOJ DE
+# PARTIDA (main.gd, autoridad del servidor) — ya no la hora del
+# sistema. Aquí solo se traduce a luz y posición del sol/luna.
 # -------------------------------------------------------------
+## 0..0.5 = progreso del día, 0.5..1 = progreso de la noche.
 func day_phase() -> float:
-	return fmod(Time.get_unix_time_from_system(), DAY_LEN) / DAY_LEN
+	var m: Node2D = get_parent()
+	var prog: float = m.phase_progress()
+	return (0.5 + prog * 0.5) if m.is_night else prog * 0.5
 
 
 ## 1.0 = pleno día, 0.0 = plena noche, con transiciones suaves.
 func daylight() -> float:
-	return clampf(sin(TAU * day_phase()) * 1.6 + 0.5, 0.0, 1.0)
+	return get_parent().daylight_factor()
 
 
 # -------------------------------------------------------------

@@ -21,8 +21,9 @@ const CONTACT_COOLDOWN := 0.8
 const HIT_REACH := 200.0
 const SPAWN_EVERY := 15.0
 
-# Variantes de slime: stats + botín + tamaño visual (la colisión
-# usa SIZE para todas — solo cambia el dibujo).
+# Variantes de NPC: stats + botín + tamaño visual (la colisión usa
+# SIZE para todas — solo cambia el dibujo). "fly" = vuela sin
+# gravedad (murciélago: enemigo NOCTURNO, sale en las oleadas).
 const KINDS := {
 	"normal": {"hp": 70, "dmg": 8, "speed": 115.0, "coins": 3, "ore": 1,
 		"w": 34.0, "h": 26.0, "color": Color("3fae4a")},
@@ -30,6 +31,8 @@ const KINDS := {
 		"w": 52.0, "h": 40.0, "color": Color("8a4ad0")},
 	"dorado": {"hp": 60, "dmg": 5, "speed": 165.0, "coins": 15, "ore": 0,
 		"w": 30.0, "h": 24.0, "color": Color("f0c040")},
+	"murcielago": {"hp": 45, "dmg": 6, "speed": 150.0, "coins": 4, "ore": 0,
+		"w": 32.0, "h": 18.0, "color": Color("6b5b8e"), "fly": true},
 }
 
 # Servidor: id -> {pos, vel, hp, kind, cool, jump_t}
@@ -85,16 +88,27 @@ func _draw() -> void:
 		var n: Dictionary = npcs[id]
 		var k := _kind_of(n)
 		var p: Vector2 = n.pos
-		var vy: float = _vis.get(id, {}).get("vy", 0.0)
-		var stretch := clampf(absf(vy) / 700.0, 0.0, 0.30)
-		var w: float = float(k.w) * (1.0 - stretch * 0.6)
-		var h: float = float(k.h) * (1.0 + stretch)
 		var tex: Texture2D = Atlas.slimes.get(n.get("kind", "normal"), Atlas.slimes["normal"])
-		draw_texture_rect(tex, Rect2(p.x - w * 0.5, p.y + 10.0 - h, w, h), false)
+		var rect: Rect2
+		if bool(k.get("fly", false)):
+			# Volador: anclado al centro, con aleteo y vaivén
+			var ms := float(Time.get_ticks_msec())
+			var w: float = float(k.w) * (1.0 + 0.14 * sin(ms / 90.0 + id))
+			var h: float = float(k.h)
+			var bob := 3.0 * sin(ms / 130.0 + id * 1.7)
+			rect = Rect2(p.x - w * 0.5, p.y - h * 0.5 + bob, w, h)
+		else:
+			# Slime: anclado al suelo, se estira al saltar/caer
+			var vy: float = _vis.get(id, {}).get("vy", 0.0)
+			var stretch := clampf(absf(vy) / 700.0, 0.0, 0.30)
+			var w2: float = float(k.w) * (1.0 - stretch * 0.6)
+			var h2: float = float(k.h) * (1.0 + stretch)
+			rect = Rect2(p.x - w2 * 0.5, p.y + 10.0 - h2, w2, h2)
+		draw_texture_rect(tex, rect, false)
 		var ratio := _ratio_of(n)
 		if ratio < 1.0:
 			var bw: float = float(k.w)
-			var by: float = p.y + 10.0 - float(k.h) - 8.0
+			var by: float = rect.position.y - 8.0
 			draw_rect(Rect2(p.x - bw * 0.5, by, bw, 4.0), Color(0, 0, 0, 0.55))
 			draw_rect(Rect2(p.x - bw * 0.5, by, bw * ratio, 4.0), Color(0.85, 0.25, 0.2))
 
@@ -105,7 +119,8 @@ func _draw() -> void:
 func _simulate(delta: float) -> void:
 	_spawn_t -= delta
 	if _spawn_t <= 0.0:
-		_spawn_t = SPAWN_EVERY
+		# De noche la presión sube: spawns más frecuentes (Fase 6)
+		_spawn_t = SPAWN_EVERY * (0.45 if main.is_night else 1.0)
 		_try_spawn()
 
 	var w: Node2D = main.world
@@ -114,6 +129,7 @@ func _simulate(delta: float) -> void:
 
 	for id: int in npcs.keys():
 		var n: Dictionary = npcs[id]
+		var k := _kind_of(n)
 		n.cool = maxf(0.0, n.cool - delta)
 		n.jump_t = maxf(0.0, n.jump_t - delta)
 
@@ -126,16 +142,24 @@ func _simulate(delta: float) -> void:
 				best = d
 				target = main.players[pid]
 
-		# Saltar: hacia el jugador si está cerca (chase), si no, deambular
-		if _on_floor(n, w) and n.jump_t <= 0.0:
-			n.jump_t = randf_range(0.8, 1.6)
-			n.vel.y = -430.0
-			if target != null and best < CHASE_RANGE:
-				n.vel.x = signf(target.position.x - n.pos.x) * float(_kind_of(n).speed)
-			else:
-				n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
-
-		n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
+		if bool(k.get("fly", false)):
+			# Vuelo (murciélago): persigue en línea recta, sin gravedad
+			if target != null and best < CHASE_RANGE * 1.7:
+				var dir: Vector2 = (target.position - n.pos).normalized()
+				n.vel = n.vel.lerp(dir * float(k.speed), minf(1.0, 3.0 * delta))
+			elif n.jump_t <= 0.0:
+				n.jump_t = randf_range(1.0, 2.2)
+				n.vel = Vector2.from_angle(randf() * TAU) * float(k.speed) * 0.4
+		else:
+			# Saltar: hacia el jugador si está cerca, si no, deambular
+			if _on_floor(n, w) and n.jump_t <= 0.0:
+				n.jump_t = randf_range(0.8, 1.6)
+				n.vel.y = -430.0
+				if target != null and best < CHASE_RANGE:
+					n.vel.x = signf(target.position.x - n.pos.x) * float(k.speed)
+				else:
+					n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
+			n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
 		_move(n, delta, w)
 
 		# Daño por contacto
@@ -152,7 +176,8 @@ func _simulate(delta: float) -> void:
 func _try_spawn() -> void:
 	if npcs.size() >= MAX_NPCS or main.players.is_empty() or main.world == null:
 		return
-	_spawn_one(_roll_kind(), main.players.values().pick_random())
+	var kind := _roll_kind_night(main.night_number) if main.is_night else _roll_kind()
+	_spawn_one(kind, main.players.values().pick_random())
 
 
 func _roll_kind() -> String:
@@ -164,28 +189,40 @@ func _roll_kind() -> String:
 	return "normal"
 
 
+## De noche entran los murciélagos y las variantes duras escalan
+## con el número de noche (Fase 6).
+func _roll_kind_night(night: int) -> String:
+	var r := randf()
+	if r < 0.30:
+		return "murcielago"
+	if r < 0.30 + 0.04 * night:
+		return "grande"
+	if r < 0.36 + 0.04 * night:
+		return "dorado"
+	return "normal"
+
+
 func _spawn_one(kind: String, near: Node2D) -> void:
 	var w: Node2D = main.world
 	var x := clampi(floori(near.position.x / w.TILE) + randi_range(-12, 12), 2, w.W - 3)
 	var pos: Vector2 = w.surface_spawn(x)
 	pos.y -= 4.0
+	if bool(KINDS[kind].get("fly", false)):
+		pos.y -= randf_range(80.0, 160.0)   # los voladores aparecen en el aire
 	npcs[_next_id] = {"pos": pos, "vel": Vector2.ZERO, "hp": int(KINDS[kind].hp),
 		"kind": kind, "cool": 0.0, "jump_t": randf_range(0.0, 1.0)}
 	_next_id += 1
 
 
-## Evento invasión (GDD §9): ola de 4 slimes (uno grande garantizado)
-## cerca de un jugador al azar. Lo dispara el scheduler de main.gd.
-func spawn_wave() -> bool:
+## Oleada nocturna (Fase 6): la dispara _set_phase (main.gd) al caer
+## la noche. Crece con el número de noche: 3 + noche enemigos.
+func night_wave(night: int) -> bool:
 	if not multiplayer.is_server() or main.players.is_empty() or main.world == null:
 		return false
-	if npcs.size() >= WAVE_CAP:
-		return false
-	var near: Node2D = main.players.values().pick_random()
-	_spawn_one("grande", near)
-	for i in 3:
-		_spawn_one(_roll_kind(), near)
-	return true
+	var count := mini(3 + night, WAVE_CAP - npcs.size())
+	for i in maxi(count, 0):
+		_spawn_one(_roll_kind_night(night), main.players.values().pick_random())
+	return count > 0
 
 
 # -------------------------------------------------------------

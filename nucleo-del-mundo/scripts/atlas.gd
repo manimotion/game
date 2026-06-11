@@ -155,10 +155,12 @@ func _ready() -> void:
 		],
 		"jump": [_build_frame(HEAD + TORSO + LEGS_JUMP)],
 	}
-	# Variantes de slime (npc_manager.KINDS): mismas formas, otra paleta
+	# Variantes de NPC (npc_manager.KINDS): slimes con otra paleta
+	# + el murciélago nocturno (Fase 6)
 	slimes["normal"] = _make_slime(Color("3fae4a"), Color("2c8338"), Color("8fe093"))
 	slimes["grande"] = _make_slime(Color("8a4ad0"), Color("5c2f96"), Color("c9a0f0"))
 	slimes["dorado"] = _make_slime(P_GOLD, P_GOLD_D, P_GOLD_L)
+	slimes["murcielago"] = _make_bat()
 	sky_tex = _make_gradient(C_SKY_TOP, C_SKY_BOT)
 	under_tex = _make_gradient(C_UNDER_TOP, C_UNDER_BOT)
 	cloud_tex = _make_cloud()
@@ -392,6 +394,30 @@ func _make_slime(body: Color, body_d: Color, shine: Color) -> ImageTexture:
 		img.set_pixel(ex, 5, Color.WHITE)
 		img.set_pixel(ex, 6, Color.WHITE)
 		img.set_pixel(ex, 6, Color("1c1c24"))
+	return ImageTexture.create_from_image(img)
+
+
+# Murciélago (Fase 6): W = ala membranosa, B = cuerpo, E = ojo rojo
+const BAT := [
+	".W..........W.",
+	"WWW........WWW",
+	"WWWWBBBBBBWWWW",
+	".WWWBEBBEBWWW.",
+	"..WWBBBBBBWW..",
+	"....BBBBBB....",
+	".....B..B.....",
+]
+
+
+func _make_bat() -> ImageTexture:
+	var img := Image.create(14, 7, false, Image.FORMAT_RGBA8)
+	for y in BAT.size():
+		var row: String = BAT[y]
+		for x in row.length():
+			match row[x]:
+				"W": img.set_pixel(x, y, Color("4a3d66"))
+				"B": img.set_pixel(x, y, Color("6b5b8e"))
+				"E": img.set_pixel(x, y, Color("ff4040"))
 	return ImageTexture.create_from_image(img)
 
 

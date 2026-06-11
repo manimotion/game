@@ -6,8 +6,9 @@ supervivencia por noches — de día recolectas y construyes, de noche defiendes
 el objetivo es sobrevivir X noches. La base (murallas, torres, trampas) es una
 vía de progresión tan importante como el equipo. El plan por fases está en
 `ROADMAP.md`; el GDD original sigue siendo la referencia técnica de los sistemas
-base. Estado: Fases 1-5 completadas (core sandbox + monetización + arte/SFX
-procedurales); la Fase 6 (ciclo día/noche jugable) es lo siguiente.
+base. Estado: Fases 1-6 completadas (core sandbox + monetización + arte/SFX
+procedurales + ciclo día/noche jugable con modos Supervivencia/Sandbox);
+la Fase 7 (defensa pasiva: murallas y fogata) es lo siguiente.
 El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
@@ -69,22 +70,25 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
 - `scripts/sfx.gd` — autoload `Sfx`. SFX y música de fondo procedurales (WAV sintetizado
   al arrancar; la música es un loop suave Am–F–C–G, omitida en headless). 100% local y
   cosmético: nunca viaja por red ni toca estado del juego.
-- `scripts/main.gd` — lobby, HUD (barra de vida, herramienta equipada, toast central con
-  desvanecido), spawn, inventarios (servidor), crafting, vida/respawn + regeneración lenta,
-  persistencia (gzip JSON en `user://nucleo_save.json.gz`), scheduler (autosave, meteoro con
-  aviso previo, invasiones de slimes), modo `--server`. MONETIZACIÓN: catálogo `SKINS`,
-  Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles` (nombre → {coins, skins, skin})
-  persistidos en el save (v4).
+- `scripts/main.gd` — lobby (modos Supervivencia/Sandbox), HUD (fase del ciclo, barra de
+  vida, equipo, toast central con desvanecido), spawn, inventarios (servidor), crafting,
+  vida/respawn + regeneración lenta, RELOJ DE PARTIDA día/noche (Fase 6: `is_night`,
+  `night_number`, `_set_phase` dispara `night_wave`; solo el servidor cambia de fase),
+  persistencia (gzip JSON en `user://nucleo_save.json.gz`; las runs de supervivencia NO
+  guardan), scheduler (autosave, meteoro diurno con aviso), modo `--server`. MONETIZACIÓN:
+  catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles` persistidos (v4).
 - `scripts/world.gd` — tiles, chunks/streaming, HP por tile, minado/colocación, generación
-  con cuevas (ruido 2D) e islas flotantes, ciclo día/noche visual (`daylight()`, usa la hora
-  del sistema — igual en todos los peers sin red), meteoro (FX de impacto + sacudida de
-  cámara), validaciones de alcance.
+  con cuevas (ruido 2D) e islas flotantes, luz día/noche (`daylight()` delega en el reloj
+  de partida de main.gd), meteoro (FX de impacto + sacudida de cámara), validaciones
+  de alcance.
 - `scripts/fx.gd` — partículas, textos flotantes ("+N item"), anillos de impacto y ambiente
   (luciérnagas/polen/polvo). 100% visual y local, nunca toca estado.
 - `scripts/player.gd` — física AABB, cámara (con `shake()`), input (joystick táctil +
   teclado), combate.
-- `scripts/npc_manager.gd` — slimes FSM (idle/wander/chase) con 3 variantes en `KINDS`
-  (normal/grande/dorado: stats, botín, tamaño); ola de invasión vía `spawn_wave()`.
+- `scripts/npc_manager.gd` — enemigos FSM con variantes en `KINDS` (slimes
+  normal/grande/dorado + murciélago volador `fly: true`, nocturno); oleadas nocturnas
+  vía `night_wave(noche)` (3+noche enemigos, escala con la noche); de noche el spawn
+  regular también se acelera.
 - `scripts/virtual_joystick.gd` — joystick multi-touch; consume sus toques con
   `set_input_as_handled()` para no interferir con minar.
 - `scripts/chunk_renderer.gd` — dibujo por chunk con grietas de daño y decoración

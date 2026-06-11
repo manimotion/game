@@ -123,22 +123,40 @@ func _ready() -> void:
 	main._regen_tick()
 	_check("regen no pasa del máximo", int(main.player_hp[1]) == main.PLAYER_MAX_HP)
 
-	# ---- TEST 6: invasión de slimes (spawn_wave) ----
+	# ---- TEST 6: ciclo día/noche (Fase 6) + oleada nocturna ----
 	var npcs_node: Node2D = main.get_node("NPCs")
-	var antes: int = npcs_node.npcs.size()
-	_check("spawn_wave devuelve true con jugadores", npcs_node.spawn_wave())
-	print("[6] slimes tras la ola:", npcs_node.npcs.size())
-	_check("spawn_wave agrega 4 slimes", npcs_node.npcs.size() == antes + 4)
+	_check("la partida arranca de día", not main.is_night and main.night_number == 0)
+	main._phase_t = main.DAY_SECONDS - 20.0
+	_check("daylight_factor = 1 en pleno día", main.daylight_factor() == 1.0)
+	main._set_phase(true)
+	_check("_set_phase(true) inicia la noche 1", main.is_night and main.night_number == 1)
+	_check("toast anuncia la noche", "Noche 1" in main._status.text)
+	print("[6] enemigos tras anochecer:", npcs_node.npcs.size())
+	_check("el anochecer invoca la oleada (3+noche)", npcs_node.npcs.size() >= 4)
 	var kinds_ok := true
-	var hay_grande := false
 	for nid: int in npcs_node.npcs:
-		var kind: String = npcs_node.npcs[nid].kind
-		if not npcs_node.KINDS.has(kind):
+		if not npcs_node.KINDS.has(npcs_node.npcs[nid].kind):
 			kinds_ok = false
-		if kind == "grande":
-			hay_grande = true
-	_check("todos los slimes tienen variante válida", kinds_ok)
-	_check("la ola incluye un slime grande", hay_grande)
+	_check("todos los enemigos tienen variante válida", kinds_ok)
+	main._phase_t = main.NIGHT_SECONDS - 20.0
+	_check("daylight_factor = 0 en plena noche", main.daylight_factor() == 0.0)
+	main._set_phase(false)
+	_check("amanece tras la noche", not main.is_night and "Amaneció" in main._status.text)
+
+	# ---- TEST 6b: murciélago (enemigo volador nocturno) ----
+	_check("KINDS incluye murciélago volador",
+		npcs_node.KINDS.has("murcielago") and bool(npcs_node.KINDS["murcielago"].get("fly", false)))
+	_check("Atlas tiene textura del murciélago", Atlas.slimes.has("murcielago"))
+	npcs_node.npcs.clear()
+	npcs_node._spawn_one("murcielago", main.players[1])
+	var bid: int = npcs_node.npcs.keys()[0]
+	var b0: Vector2 = npcs_node.npcs[bid].pos
+	for i in 30:
+		npcs_node._simulate(1.0 / 30.0)
+	var bat: Dictionary = npcs_node.npcs.get(bid, {})
+	print("[6b] murciélago:", b0, "->", bat.get("pos"))
+	_check("el murciélago vuela (se mueve sin caer en picada)",
+		bat.has("pos") and bat.pos != b0 and absf(bat.vel.y) < 250.0)
 
 	# ---- TEST 7: matar un slime da Núcleos según su variante ----
 	var sid: int = npcs_node.npcs.keys()[0]

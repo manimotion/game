@@ -26,23 +26,22 @@ runs, no solo sandbox eterno.
 
 ---
 
-## Fase 6 — Ciclo día/noche JUGABLE (la fundación) 🎯 SIGUIENTE
+## Fase 6 — Ciclo día/noche JUGABLE ✅ HECHA (2026-06-10)
 
-El resto del roadmap cuelga de esto. Sin reloj de partida no hay runs.
+1. ✅ Reloj de partida server-authoritative en `main.gd` (`is_night`,
+   `night_number`, `_phase_t`; día 180 s, noche 90 s). Los clientes reciben
+   `apply_phase` por RPC y solo cuentan hacia atrás para el HUD.
+   `world.daylight()`/`day_phase()` delegan en el reloj (ya no hora del sistema).
+2. ✅ La noche dispara `night_wave(noche)`: 3+noche enemigos, variantes duras
+   escalan con la noche. La invasión aleatoria desapareció; meteoro = diurno.
+3. ✅ HUD "☀️ Día 1 — 2:45" / "🌙 Noche 3 de 7 — 0:58" + aviso de atardecer.
+4. ✅ Lobby: "🌙 Supervivencia — 7 noches" y "🏖️ Sandbox libre". Las runs de
+   supervivencia NO tocan el save del sandbox; al sobrevivir las 7 noches hay
+   toast de victoria (la pantalla de resumen completa es Fase 9).
+5. ✅ Primer enemigo nuevo: **murciélago** (volador, nocturno, sin gravedad,
+   persigue en línea recta; `fly: true` en `KINDS`).
 
-1. **Reloj de partida en el servidor**: `game_time` avanza en el scheduler de
-   `main.gd`, se sincroniza a los peers (RPC reliable al cambiar de fase basta).
-   `world.daylight()` pasa a leer este reloj (la hora del sistema queda solo
-   como fallback del menú). Día ≈ 3 min, noche ≈ 1.5 min (constantes arriba).
-2. **La noche dispara oleadas**: al anochecer, `spawn_wave()` con tamaño/variantes
-   escalados por número de noche. El timer de invasión aleatoria desaparece
-   (las invasiones SON la noche). El meteoro queda como evento diurno.
-3. **HUD del ciclo**: contador "🌙 Noche 3" / "☀️ Día 4", aviso de atardecer
-   ("anochece en 30 s"), todo en el panel superior.
-4. **Selector de modo en el lobby**: *Sandbox* (mundo actual, persistente) y
-   *Supervivencia* (run de X noches). El save actual es el modo sandbox.
-
-## Fase 7 — La base importa: defensa pasiva
+## Fase 7 — La base importa: defensa pasiva 🎯 SIGUIENTE
 
 1. **Muralla**: tile craftable (piedra), HP alto (~400). De noche los slimes
    **atacan los bloques** que les cierran el paso (FSM: si está bloqueado hacia

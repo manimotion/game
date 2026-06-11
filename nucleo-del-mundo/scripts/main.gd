@@ -54,6 +54,12 @@ const REGEN_AMOUNT := 3      # vida recuperada por tick (solo servidor)
 const METEOR_WARN := 3.0     # segundos de aviso antes del impacto del meteoro
 const TOAST_LIFE := 4.5      # segundos visibles del toast antes de desvanecerse
 
+# Fase 6 — ciclo día/noche JUGABLE (ROADMAP.md): el servidor es el reloj
+const DAY_SECONDS := 180.0   # duración del día
+const NIGHT_SECONDS := 90.0  # duración de la noche
+const DUSK_WARN := 30.0      # aviso de atardecer
+const SURVIVAL_NIGHTS := 7   # objetivo del modo supervivencia
+
 # MONETIZACIÓN — catálogo de skins (solo cosmético, nunca pay-to-win).
 # El SERVIDOR valida compra/equipamiento (§16); el cliente solo pide.
 # "default" usa el color por jugador de siempre. "anim" = color animado.
@@ -102,9 +108,16 @@ var _save_t := 0.0
 var _meteor_t := 90.0
 var _meteor_x := -1                 # x anunciada del meteoro (-1 = ninguno pendiente)
 var _meteor_warn_t := 0.0
-var _invasion_t := 150.0
 var _regen_t := 0.0
 var _toast_life := 0.0
+
+# Ciclo día/noche (Fase 6) — el SERVIDOR lleva el reloj; los clientes
+# reciben cada cambio de fase y solo cuentan hacia atrás para el HUD.
+var game_mode := "sandbox"          # "sandbox" | "survival" (lo fija el host)
+var is_night := false
+var night_number := 0               # noches iniciadas (0 = aún no anochece)
+var _phase_t := DAY_SECONDS         # tiempo restante de la fase actual
+var _dusk_warned := false
 
 var _ui: CanvasLayer
 var _menu: PanelContainer
@@ -112,6 +125,7 @@ var _status: Label
 var _toast_panel: PanelContainer = null
 var _hp_panel: Control = null
 var _low_hp: Panel = null           # borde rojo pulsante con vida baja
+var _phase_label: Label = null      # "☀️ Día 1 — 2:45" / "🌙 Noche 3 — 0:58"
 var _ip_input: LineEdit
 var _name_input: LineEdit
 var _slot_buttons: Dictionary = {}
@@ -196,27 +210,34 @@ func _process(delta: float) -> void:
 			_regen_t = 0.0
 			_regen_tick()
 
-		# Meteoro (GDD §9): primero un aviso, luego el impacto
-		_meteor_t -= delta
-		if _meteor_t <= 0.0 and _meteor_x < 0:
-			_meteor_t = randf_range(70.0, 120.0)
-			_meteor_x = randi_range(6, world.W - 7)
-			_meteor_warn_t = METEOR_WARN
-			_broadcast_toast("☄️ ¡Meteoro inminente cerca de x=%d! Aléjate" % _meteor_x)
+		# Reloj de partida (Fase 6): el día/noche gobierna el gameplay.
+		# Al anochecer _set_phase dispara la oleada (ya no hay invasiones
+		# con timer aleatorio: las oleadas SON la noche).
+		_phase_t -= delta
+		if not is_night and not _dusk_warned and _phase_t <= DUSK_WARN:
+			_dusk_warned = true
+			_broadcast_toast("🌆 Anochece en %d s — prepárate" % int(DUSK_WARN))
+		if _phase_t <= 0.0:
+			_set_phase(not is_night)
+
+		# Meteoro (GDD §9): evento DIURNO con aviso previo
+		if not is_night:
+			_meteor_t -= delta
+			if _meteor_t <= 0.0 and _meteor_x < 0:
+				_meteor_t = randf_range(70.0, 120.0)
+				_meteor_x = randi_range(6, world.W - 7)
+				_meteor_warn_t = METEOR_WARN
+				_broadcast_toast("☄️ ¡Meteoro inminente cerca de x=%d! Aléjate" % _meteor_x)
 		if _meteor_x >= 0:
 			_meteor_warn_t -= delta
 			if _meteor_warn_t <= 0.0:
 				var where: Vector2i = world.meteor_strike(_meteor_x)
 				_meteor_x = -1
 				_broadcast_toast("☄️ ¡Impacto! El meteoro dejó mineral en x=%d" % where.x)
-
-		# Invasión de slimes (GDD §9): ola cerca de un jugador al azar
-		_invasion_t -= delta
-		if _invasion_t <= 0.0:
-			_invasion_t = randf_range(150.0, 240.0)
-			var npcs_node: Node2D = get_node_or_null("NPCs")
-			if npcs_node != null and npcs_node.spawn_wave():
-				_broadcast_toast("👾 ¡Invasión de slimes! Defiéndete")
+	elif multiplayer.multiplayer_peer != null:
+		# Cliente: solo cuenta hacia atrás para el HUD (el servidor manda)
+		_phase_t = maxf(0.0, _phase_t - delta)
+	_update_phase_label()
 
 
 func _notification(what: int) -> void:
@@ -228,8 +249,9 @@ func _notification(what: int) -> void:
 # -------------------------------------------------------------
 # LOBBY
 # -------------------------------------------------------------
-func _host(load_save: bool) -> void:
+func _host(load_save: bool, mode: String = "sandbox") -> void:
 	my_name = _read_name()
+	game_mode = mode
 	if Net.host_game() != OK:
 		_show_toast("❌ Error al crear la partida (¿puerto ocupado?)")
 		return
@@ -311,6 +333,7 @@ func request_join(nombre: String) -> void:
 	spawn_player_remote.rpc(new_id, spawn, str(prof.skin), nombre)
 	_spawn_player(new_id, spawn, str(prof.skin), nombre)
 	_push_profile(new_id)
+	apply_phase.rpc_id(new_id, is_night, night_number, _phase_t, game_mode)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -652,13 +675,71 @@ func _regen_tick() -> void:
 
 
 # -------------------------------------------------------------
+# CICLO DÍA/NOCHE (Fase 6, ROADMAP.md) — SOLO el servidor cambia
+# de fase; los clientes la reciben por RPC. La luz del mundo
+# (world.daylight) y las oleadas nocturnas cuelgan de esto.
+# -------------------------------------------------------------
+func _set_phase(night: bool) -> void:
+	is_night = night
+	_phase_t = NIGHT_SECONDS if night else DAY_SECONDS
+	_dusk_warned = false
+	if night:
+		night_number += 1
+		_broadcast_toast("🌙 ¡Noche %d! Resiste hasta el amanecer" % night_number)
+		var npcs_node: Node2D = get_node_or_null("NPCs")
+		if npcs_node != null:
+			npcs_node.night_wave(night_number)
+	else:
+		if night_number > 0:
+			_broadcast_toast("☀️ Amaneció — sobreviviste la noche %d" % night_number)
+		if game_mode == "survival" and night_number == SURVIVAL_NIGHTS:
+			_broadcast_toast("🏆 ¡Sobreviviste las %d noches! Sigue jugando en modo libre" % SURVIVAL_NIGHTS)
+	apply_phase.rpc(is_night, night_number, _phase_t, game_mode)
+
+
+@rpc("authority", "call_remote", "reliable")
+func apply_phase(night: bool, n: int, t_left: float, mode: String) -> void:
+	is_night = night
+	night_number = n
+	_phase_t = t_left
+	game_mode = mode
+
+
+## 1.0 = pleno día, 0.0 = plena noche; amanecer/atardecer de ~12 s.
+## world.daylight() delega aquí (la hora del sistema ya no manda).
+func daylight_factor() -> float:
+	var total: float = NIGHT_SECONDS if is_night else DAY_SECONDS
+	var k := clampf((total - _phase_t) / 12.0, 0.0, 1.0)
+	return (1.0 - k) if is_night else k
+
+
+## Progreso 0..1 de la fase actual (posición del sol/luna en el cielo).
+func phase_progress() -> float:
+	var total: float = NIGHT_SECONDS if is_night else DAY_SECONDS
+	return clampf(1.0 - _phase_t / total, 0.0, 1.0)
+
+
+func _update_phase_label() -> void:
+	if _phase_label == null or world == null:
+		return
+	var mm := int(_phase_t) / 60
+	var ss := int(_phase_t) % 60
+	if is_night:
+		var meta := (" de %d" % SURVIVAL_NIGHTS) if game_mode == "survival" else ""
+		_phase_label.text = "🌙 Noche %d%s — %d:%02d" % [night_number, meta, mm, ss]
+	else:
+		_phase_label.text = "☀️ Día %d — %d:%02d" % [night_number + 1, mm, ss]
+
+
+# -------------------------------------------------------------
 # PERSISTENCIA (GDD §14): JSON comprimido con gzip
 # Nota: se guarda el mundo + el inventario del host. Inventarios
 # por jugador requieren cuentas (los peer-ids cambian por sesión)
 # y llegarán con el backend (Fase 5).
 # -------------------------------------------------------------
 func save_game() -> void:
-	if world == null:
+	# Las runs de supervivencia NO se guardan: el save es del sandbox
+	if world == null or game_mode == "survival":
 		return
 	var tiles_s := {}
 	for c: Vector2i in world.tiles:
@@ -828,8 +909,15 @@ func _build_ui() -> void:
 	_name_input.custom_minimum_size.y = 48
 	box.add_child(_name_input)
 
+	# Modos de juego (Fase 6): supervivencia por noches o sandbox libre
+	var surv_btn := Button.new()
+	surv_btn.text = "🌙 Supervivencia — %d noches (host)" % SURVIVAL_NIGHTS
+	surv_btn.custom_minimum_size.y = 56
+	surv_btn.pressed.connect(func(): _host(false, "survival"))
+	box.add_child(surv_btn)
+
 	var new_btn := Button.new()
-	new_btn.text = "Nueva partida (host)"
+	new_btn.text = "🏖️ Sandbox libre (host)"
 	new_btn.custom_minimum_size.y = 56
 	new_btn.pressed.connect(func(): _host(false))
 	box.add_child(new_btn)
@@ -884,6 +972,10 @@ func _show_hud() -> void:
 	var status_box := VBoxContainer.new()
 	status_box.add_theme_constant_override("separation", 4)
 	hp_panel.add_child(status_box)
+
+	_phase_label = Label.new()
+	_phase_label.add_theme_font_size_override("font_size", 16)
+	status_box.add_child(_phase_label)
 
 	var hp_row := HBoxContainer.new()
 	hp_row.add_theme_constant_override("separation", 8)
