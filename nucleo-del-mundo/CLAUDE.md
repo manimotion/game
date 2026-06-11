@@ -72,7 +72,10 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
 - `scripts/network_manager.gd` — autoload `Net`. Host/join ENet, señales de conexión.
 - `scripts/sfx.gd` — autoload `Sfx`. SFX y música de fondo procedurales (WAV sintetizado
   al arrancar; la música es un loop suave Am–F–C–G, omitida en headless). 100% local y
-  cosmético: nunca viaja por red ni toca estado del juego.
+  cosmético: nunca viaja por red ni toca estado del juego. Incluye jingles
+  (`_make_jingle`) de victoria/derrota y sonidos de torre/pinchos/jefe/amanecer/noche;
+  `main._show_toast` dispara sonido por PREFIJO de emoji del toast (☄️🛠️👾👹🌙☀️) —
+  así el aviso y su sonido llegan juntos a todos los peers.
 - `scripts/main.gd` — lobby (modos Supervivencia/Sandbox), HUD (fase del ciclo, barra de
   vida, equipo, toast central con desvanecido), spawn, inventarios (servidor), crafting
   (equipo único + bloques apilables: muralla/fogata/trampa/torre), vida/respawn en fogata
@@ -84,8 +87,13 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   ESTRUCTURA DE RUN (Fase 9): al amanecer (`_set_phase(false)`) reparte Núcleos por noche
   sobrevivida (`NIGHT_REWARD_BASE`/`NIGHT_REWARD_STEP`); `_end_run(victory)` (guardado por
   `_run_over`) decide victoria (`night_number == SURVIVAL_NIGHTS`, + `VICTORY_BONUS`) o
-  derrota (muerte en supervivencia, sin respawn) — manda `run_ended.rpc`, muestra
-  `_run_panel` con el resumen y luego `_reset_run()` vuelve todo a sandbox.
+  derrota (muerte en supervivencia, sin respawn) — manda `run_ended.rpc(victory, noches,
+  bajas)`, muestra `_run_panel` con el resumen (borde/título de color por resultado,
+  jingle, fuegos artificiales en victoria) y luego `_reset_run()` vuelve todo a sandbox.
+  PULIDO F9: `run_kills` (SOLO servidor, lo alimenta `count_kill()` desde npc_manager),
+  barra de vida del JEFE en el HUD (`_boss_panel`, top-center, MOUSE_FILTER_IGNORE y
+  fuera de `is_point_on_ui` como `_low_hp` — el ratio del jefe viaja en el snapshot),
+  chispas verdes al curar en `_set_hp`.
   MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles`
   persistidos (v4).
 - `scripts/world.gd` — tiles (incluye T_WALL 400 HP, T_CAMPFIRE 200 HP — Fase 7,
@@ -103,19 +111,30 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   oleadas nocturnas vía `night_wave(noche)` (3+noche enemigos, escala con la noche;
   cada `BOSS_EVERY=5` noches suma además un "jefe" fuera del `WAVE_CAP`); de noche
   el spawn regular también se acelera. Fase 7: los slimes terrestres golpean bloques
-  sólidos que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`). Fase 8: contacto
-  con `T_SPIKES` aplica `SPIKE_DAMAGE`; `damage_npc()`/`_nearest_player()` son el daño
-  ambiental genérico (sin atacante jugador) que usan trampas y `tower_manager`.
+  sólidos que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`; el daño a bloques
+  es `block_dmg` de la variante si existe — grande y jefe son rompe-murallas). Fase 8:
+  contacto con `T_SPIKES` aplica `SPIKE_DAMAGE`; `damage_npc()`/`_nearest_player()` son
+  el daño ambiental genérico (sin atacante jugador) que usan trampas y `tower_manager`.
+  PULIDO: el jefe se ENFURECE bajo `BOSS_ENRAGE_HP` (velocidad/salto extra) y muere con
+  anillo expansivo (`_death_fx`, también en la ruta de snapshot del cliente); ambas rutas
+  de muerte llaman `main.count_kill(kind)`; rpcs unreliable PURAMENTE cosméticos
+  `block_hit_fx`/`spike_fx` (sonido/salpicadura con gate de distancia) — el estado real
+  sigue viajando solo por `damage_tile`/`sync_npcs`.
 - `scripts/tower_manager.gd` — torre de flechas (Fase 8), mismo patrón que
   `npc_manager`: el servidor re-escanea `world.tiles` cada `SCAN_EVERY` segundos
   buscando `T_TOWER`, dispara con cooldown al enemigo más cercano en rango
   (`_nearest_enemy`) y simula las flechas (`arrows`) hasta impactar
   (`npc_mgr.damage_npc`) o agotar su vida útil; snapshot `(pos, dir)` a 10 Hz vía
-  `sync_arrows`, los clientes solo dibujan con `Atlas.arrow_tex`.
+  `sync_arrows`, los clientes solo dibujan con `Atlas.arrow_tex` (+ estela que se
+  desvanece). PULIDO: rpc unreliable cosmético `fired_fx` (fogonazo + sonido "flecha"
+  con gate de distancia) al disparar.
 - `scripts/virtual_joystick.gd` — joystick multi-touch; consume sus toques con
   `set_input_as_handled()` para no interferir con minar.
 - `scripts/chunk_renderer.gd` — dibujo por chunk con grietas de daño y decoración
-  de superficie (hierba alta/flores del Atlas, por hash de coordenada).
+  de superficie (hierba alta/flores del Atlas, por hash de coordenada). FOGATA VIVA:
+  solo los chunks con fogata se redibujan periódicamente (`FIRE_REDRAW`) para el aura
+  parpadeante (más intensa de noche) y sueltan brasas vía `fx.ember` (partícula con
+  gravedad negativa); el resto de chunks sigue siendo estático.
 
 La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de prototipo).
 `scenes/main.tscn` es mínimo a propósito.

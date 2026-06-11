@@ -133,6 +133,7 @@ var night_number := 0               # noches iniciadas (0 = aún no anochece)
 var _phase_t := DAY_SECONDS         # tiempo restante de la fase actual
 var _dusk_warned := false
 var _run_over := false              # evita que _end_run() se dispare dos veces (Fase 9)
+var run_kills := 0                  # bajas de la run actual (SOLO servidor, Fase 9)
 
 var _ui: CanvasLayer
 var _menu: PanelContainer
@@ -160,6 +161,8 @@ var _shop_rows: Dictionary = {}     # skin_id -> Button
 var _run_panel: Control = null      # pantalla de fin de run (Fase 9)
 var _run_title: Label = null
 var _run_body: Label = null
+var _boss_panel: Control = null     # barra de vida del jefe en el HUD (Fase 9)
+var _boss_bar: ProgressBar = null
 
 
 func _ready() -> void:
@@ -208,6 +211,20 @@ func _process(delta: float) -> void:
 			_low_hp.modulate.a = 0.45 + 0.25 * sin(Time.get_ticks_msec() / 180.0)
 		else:
 			_low_hp.visible = false
+
+	# Barra del JEFE (Fase 9, pulido): visible mientras haya un jefe vivo.
+	# Funciona en todos los peers: el ratio de vida viaja en el snapshot.
+	if _boss_panel != null and npc_mgr != null:
+		var bratio := -1.0
+		for id: int in npc_mgr.npcs:
+			if str(npc_mgr.npcs[id].get("kind", "")) == "jefe":
+				bratio = npc_mgr._ratio_of(npc_mgr.npcs[id])
+				break
+		if bratio >= 0.0:
+			_boss_panel.show()
+			_boss_bar.value = bratio
+		elif _boss_panel.visible:
+			_boss_panel.hide()
 
 	_stream_t += delta
 	if _stream_t >= 0.4:
@@ -270,6 +287,8 @@ func _notification(what: int) -> void:
 func _host(load_save: bool, mode: String = "sandbox") -> void:
 	my_name = _read_name()
 	game_mode = mode
+	_run_over = false
+	run_kills = 0
 	if Net.host_game() != OK:
 		_show_toast("❌ Error al crear la partida (¿puerto ocupado?)")
 		return
@@ -540,6 +559,17 @@ func add_coins(peer_id: int, n: int) -> void:
 	_push_profile(peer_id)
 
 
+## Estadística de bajas de la run (Fase 9, pulido) — la llaman las dos
+## rutas de muerte de npc_manager (golpe del jugador y daño ambiental).
+## SOLO servidor. Derrotar al jefe se anuncia a todos.
+func count_kill(kind: String) -> void:
+	if not multiplayer.is_server():
+		return
+	run_kills += 1
+	if kind == "jefe":
+		_broadcast_toast("⚔️ ¡Jefe derrotado!")
+
+
 func try_buy_skin(skin_id: String) -> void:
 	if multiplayer.is_server():
 		_do_buy_skin(skin_id, 1)
@@ -702,6 +732,12 @@ func _set_hp(hp: int) -> void:
 		var me: Node2D = players.get(multiplayer.get_unique_id())
 		if me != null and world != null and world.fx != null:
 			world.fx.burst(me.position, Color(0.9, 0.2, 0.2), 10, 150.0)
+	elif hp > _my_hp and _my_hp > 0:
+		# Curación (regen/fogata): chispas verdes suaves — ver que la
+		# fogata te cura hace legible la mecánica (Fase 7, pulido)
+		var me2: Node2D = players.get(multiplayer.get_unique_id())
+		if me2 != null and world != null and world.fx != null:
+			world.fx.burst(me2.position + Vector2(0, -20), Color(0.4, 0.95, 0.5), 4, 60.0)
 	_my_hp = hp
 	_refresh_info()
 
@@ -804,32 +840,49 @@ func _end_run(victory: bool) -> void:
 		return
 	_run_over = true
 	var nights := night_number
+	var kills := run_kills
 	if victory:
 		for pid: int in players:
 			add_coins(pid, VICTORY_BONUS)
-	run_ended.rpc(victory, nights)
+	run_ended.rpc(victory, nights, kills)
 	if not dedicated:
-		_apply_run_ended(victory, nights)
+		_apply_run_ended(victory, nights, kills)
 	_reset_run()
 
 
 @rpc("authority", "call_remote", "reliable")
-func run_ended(victory: bool, nights: int) -> void:
-	_apply_run_ended(victory, nights)
+func run_ended(victory: bool, nights: int, kills: int) -> void:
+	_apply_run_ended(victory, nights, kills)
 
 
-func _apply_run_ended(victory: bool, nights: int) -> void:
+func _apply_run_ended(victory: bool, nights: int, kills: int) -> void:
 	if _run_panel == null:
 		return
 	var recursos := (int(_my_inv.get("dirt", 0)) + int(_my_inv.get("stone", 0))
 		+ int(_my_inv.get("wood", 0)) + int(_my_inv.get("ore", 0)))
 	_run_title.text = "🏆 ¡VICTORIA!" if victory else "💀 FIN DE LA RUN"
-	var body := "Sobreviviste %d noche%s\n📦 Recursos: %d\n🪙 Núcleos: %d" % [
-		nights, "" if nights == 1 else "s", recursos, _my_coins]
+	_run_title.add_theme_color_override("font_color",
+		Color(0.95, 0.8, 0.25) if victory else Color(0.9, 0.35, 0.3))
+	# El borde del panel toma el color del resultado (oro / rojo)
+	var sb := _run_panel.get_theme_stylebox("panel") as StyleBoxFlat
+	if sb != null:
+		sb.border_color = Color(0.95, 0.78, 0.2, 0.8) if victory else Color(0.85, 0.2, 0.2, 0.8)
+		sb.set_border_width_all(2)
+	var body := "🌙 Noches sobrevividas: %d\n⚔️ Enemigos abatidos: %d\n📦 Recursos reunidos: %d\n🪙 Núcleos: %d" % [
+		nights, kills, recursos, _my_coins]
 	if victory:
-		body += "\n+%d de bono por la victoria" % VICTORY_BONUS
+		body += "\n✨ +%d de bono por la victoria" % VICTORY_BONUS
 	_run_body.text = body
 	_run_panel.show()
+	# Celebración o lamento (solo visual y local)
+	Sfx.play("victoria" if victory else "derrota")
+	if victory:
+		var me: Node2D = players.get(multiplayer.get_unique_id())
+		if me != null and world != null and world.fx != null:
+			for i in 5:
+				world.fx.burst(me.position + Vector2(randf_range(-160, 160), randf_range(-200, -40)),
+					Color.from_hsv(randf(), 0.7, 1.0), 18, 230.0)
+			world.fx.ring(me.position, 220.0, Color(0.95, 0.8, 0.25))
 
 
 ## Reinicia el reloj de partida y reaparece a todos en modo sandbox
@@ -840,6 +893,8 @@ func _reset_run() -> void:
 	_phase_t = DAY_SECONDS
 	_dusk_warned = false
 	game_mode = "sandbox"
+	_run_over = false      # lista para una futura run sin reiniciar la app
+	run_kills = 0
 	if npc_mgr != null:
 		npc_mgr.npcs.clear()
 	if tower_mgr != null:
@@ -937,6 +992,12 @@ func _show_toast(text: String) -> void:
 		Sfx.play("fabricar")
 	elif text.begins_with("👾"):  # invasión de slimes
 		Sfx.play("invasion")
+	elif text.begins_with("👹"):  # llega el jefe: rugido (Fase 9)
+		Sfx.play("jefe")
+	elif text.begins_with("🌙"):  # cae la noche: tono grave (Fase 6, pulido)
+		Sfx.play("noche")
+	elif text.begins_with("☀️"):  # amanece: campanada suave
+		Sfx.play("amanecer")
 
 
 func _on_player_connected(id: int) -> void:
@@ -1087,6 +1148,44 @@ func _show_hud() -> void:
 	var joy := Control.new()
 	joy.set_script(JoystickScript)
 	_ui.add_child(joy)
+
+	# --- Barra de vida del JEFE (Fase 9, pulido) ---
+	# Solo informativa: MOUSE_FILTER_IGNORE en todo y fuera de
+	# is_point_on_ui — no roba taps (mismo trato que _low_hp).
+	var bpanel := PanelContainer.new()
+	bpanel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	bpanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	bpanel.grow_vertical = Control.GROW_DIRECTION_END
+	bpanel.position += Vector2(0, 64)
+	bpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_style_panel(bpanel, Color(0.12, 0.02, 0.02, 0.8))
+	bpanel.hide()
+	_ui.add_child(bpanel)
+	_boss_panel = bpanel
+
+	var bbox := VBoxContainer.new()
+	bbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bbox.add_theme_constant_override("separation", 4)
+	bpanel.add_child(bbox)
+
+	var blbl := Label.new()
+	blbl.text = "👹 JEFE"
+	blbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	blbl.add_theme_font_size_override("font_size", 15)
+	blbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bbox.add_child(blbl)
+
+	_boss_bar = ProgressBar.new()
+	_boss_bar.custom_minimum_size = Vector2(280, 16)
+	_boss_bar.min_value = 0.0
+	_boss_bar.max_value = 1.0
+	_boss_bar.show_percentage = false
+	_boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bfill := StyleBoxFlat.new()
+	bfill.bg_color = Color("d6453f")
+	bfill.set_corner_radius_all(3)
+	_boss_bar.add_theme_stylebox_override("fill", bfill)
+	bbox.add_child(_boss_bar)
 
 	# --- Vida + herramienta equipada (arriba a la izquierda) ---
 	var hp_panel := PanelContainer.new()

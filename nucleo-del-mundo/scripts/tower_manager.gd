@@ -46,6 +46,9 @@ func _draw() -> void:
 	for a: Dictionary in arrows:
 		var pos: Vector2 = a.pos
 		var dir: Vector2 = a.get("dir", Vector2.RIGHT)
+		# Estela: dos segmentos que se desvanecen detrás del proyectil
+		draw_line(pos - dir * 30.0, pos - dir * 12.0, Color(1.0, 0.95, 0.75, 0.18), 3.0)
+		draw_line(pos - dir * 14.0, pos - dir * 4.0, Color(1.0, 0.95, 0.75, 0.38), 2.0)
 		draw_set_transform(pos, dir.angle(), Vector2.ONE)
 		draw_texture_rect(Atlas.arrow_tex, Rect2(-10, -4, 20, 8), false)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -83,6 +86,8 @@ func _simulate(delta: float) -> void:
 				arrows.append({"pos": origin, "dir": dir, "vel": dir * ARROW_SPEED,
 					"life": ARROW_LIFETIME, "target": target_id})
 				t.cool = COOLDOWN
+				fired_fx.rpc(origin)
+				_fired_fx(origin)
 
 	for i in range(arrows.size() - 1, -1, -1):
 		var a: Dictionary = arrows[i]
@@ -105,6 +110,22 @@ func _nearest_enemy(pos: Vector2, npc_mgr: Node2D) -> int:
 			best = d
 			best_id = id
 	return best_id
+
+
+# FX cosmético del disparo (Fase 8, pulido): fogonazo en la tronera
+# + sonido si el jugador local está cerca. unreliable: si se pierde
+# no pasa nada (el estado real viaja en sync_arrows).
+@rpc("authority", "call_remote", "unreliable")
+func fired_fx(origin: Vector2) -> void:
+	_fired_fx(origin)
+
+
+func _fired_fx(origin: Vector2) -> void:
+	if main.world != null and main.world.fx != null:
+		main.world.fx.burst(origin, Color(1.0, 0.92, 0.6), 4, 70.0)
+	var me: Node2D = main.players.get(multiplayer.get_unique_id())
+	if me != null and me.position.distance_to(origin) < 900.0:
+		Sfx.play("flecha")
 
 
 # -------------------------------------------------------------

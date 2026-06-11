@@ -30,6 +30,19 @@ func burst(pos: Vector2, color: Color, n: int, speed: float = 130.0) -> void:
 		})
 
 
+## Brasa de fogata: chispa cálida que flota hacia arriba (Fase 7, pulido).
+func ember(pos: Vector2) -> void:
+	_parts.append({
+		"pos": pos + Vector2(randf_range(-5, 5), randf_range(-3, 0)),
+		"vel": Vector2(randf_range(-9, 9), randf_range(-46, -26)),
+		"life": randf_range(0.7, 1.3),
+		"t": 0.0,
+		"color": Color(1.0, randf_range(0.55, 0.8), 0.25),
+		"size": randf_range(1.5, 2.8),
+		"g": -0.12,   # gravedad negativa: el aire caliente la empuja
+	})
+
+
 ## Texto que sube y se desvanece ("+2 Madera", "+3 Núcleos").
 func float_text(pos: Vector2, text: String, color: Color) -> void:
 	_texts.append({"pos": pos, "t": 0.0, "life": 1.1, "text": text, "color": color})
@@ -49,7 +62,7 @@ func _process(delta: float) -> void:
 		return
 	for p: Dictionary in _parts:
 		p.t += delta
-		p.vel.y += GRAV * delta
+		p.vel.y += GRAV * float(p.get("g", 1.0)) * delta
 		p.pos += p.vel * delta
 	_parts = _parts.filter(func(p: Dictionary) -> bool: return p.t < p.life)
 	for tx: Dictionary in _texts:

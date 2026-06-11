@@ -28,18 +28,22 @@ const BOSS_EVERY := 5          # cada cuántas noches aparece un jefe (Fase 9)
 # Variantes de NPC: stats + botín + tamaño visual (la colisión usa
 # SIZE para todas — solo cambia el dibujo). "fly" = vuela sin
 # gravedad (murciélago: enemigo NOCTURNO, sale en las oleadas).
+# "block_dmg" = daño a bloques que le cierran el paso (si falta,
+# usa dmg): los grandes y el jefe son rompe-murallas (Fase 9).
 const KINDS := {
 	"normal": {"hp": 70, "dmg": 8, "speed": 115.0, "coins": 3, "ore": 1,
 		"w": 34.0, "h": 26.0, "color": Color("3fae4a")},
 	"grande": {"hp": 160, "dmg": 14, "speed": 80.0, "coins": 8, "ore": 2,
-		"w": 52.0, "h": 40.0, "color": Color("8a4ad0")},
+		"w": 52.0, "h": 40.0, "color": Color("8a4ad0"), "block_dmg": 24},
 	"dorado": {"hp": 60, "dmg": 5, "speed": 165.0, "coins": 15, "ore": 0,
 		"w": 30.0, "h": 24.0, "color": Color("f0c040")},
 	"murcielago": {"hp": 45, "dmg": 6, "speed": 150.0, "coins": 4, "ore": 0,
 		"w": 32.0, "h": 18.0, "color": Color("6b5b8e"), "fly": true},
 	"jefe": {"hp": 500, "dmg": 18, "speed": 65.0, "coins": 50, "ore": 6,
-		"w": 64.0, "h": 50.0, "color": Color("d6453f")},
+		"w": 64.0, "h": 50.0, "color": Color("d6453f"), "block_dmg": 60},
 }
+const BOSS_ENRAGE_HP := 0.5    # bajo este % de vida el jefe se enfurece
+const BOSS_ENRAGE_SPEED := 1.5 # multiplicador de velocidad enfurecido
 
 # Servidor: id -> {pos, vel, hp, kind, cool, jump_t}
 # Clientes: id -> {pos, kind, ratio}
@@ -158,12 +162,18 @@ func _simulate(delta: float) -> void:
 				n.jump_t = randf_range(1.0, 2.2)
 				n.vel = Vector2.from_angle(randf() * TAU) * float(k.speed) * 0.4
 		else:
-			# Saltar: hacia el jugador si está cerca, si no, deambular
+			# Saltar: hacia el jugador si está cerca, si no, deambular.
+			# El jefe se ENFURECE bajo BOSS_ENRAGE_HP: corre y salta más (Fase 9).
+			var spd := float(k.speed)
+			var jump := -430.0
+			if n.kind == "jefe" and _ratio_of(n) < BOSS_ENRAGE_HP:
+				spd *= BOSS_ENRAGE_SPEED
+				jump = -500.0
 			if _on_floor(n, w) and n.jump_t <= 0.0:
 				n.jump_t = randf_range(0.8, 1.6)
-				n.vel.y = -430.0
+				n.vel.y = jump
 				if target != null and best < CHASE_RANGE:
-					n.vel.x = signf(target.position.x - n.pos.x) * float(k.speed)
+					n.vel.x = signf(target.position.x - n.pos.x) * spd
 				else:
 					n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
 			n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
@@ -176,6 +186,8 @@ func _simulate(delta: float) -> void:
 				var under := Vector2i(floori(n.pos.x / w.TILE), floori((n.pos.y + SIZE.y * 0.5 - 1.0) / w.TILE))
 				if w.tiles.get(under, 0) == w.T_SPIKES:
 					n.spike_cd = SPIKE_CD
+					spike_fx.rpc(n.pos)
+					_spike_fx(n.pos)
 					damage_npc(id, SPIKE_DAMAGE)
 					if not npcs.has(id):
 						continue
@@ -192,7 +204,9 @@ func _simulate(delta: float) -> void:
 				var bc := Vector2i(bx, by)
 				if w.is_solid(bc) and w.HP.has(w.tiles.get(bc, 0)):
 					n.block_cd = BLOCK_CD
-					w.damage_tile(bc, int(k.dmg))
+					w.damage_tile(bc, int(k.get("block_dmg", k.dmg)))
+					block_hit_fx.rpc(n.pos)
+					_block_hit_fx(n.pos)
 
 		# Daño por contacto
 		if n.cool <= 0.0:
@@ -339,9 +353,10 @@ func _do_hit(id: int, attacker: int) -> void:
 	npcs[id].hp -= main.get_attack_damage(attacker)   # espada, no pico
 	if npcs[id].hp <= 0:
 		var k := _kind_of(npcs[id])
-		if main.world != null and main.world.fx != null:
-			main.world.fx.burst(npcs[id].pos, k.color, 16)
+		var kind := str(npcs[id].kind)
+		_death_fx(npcs[id].pos, k, kind)
 		npcs.erase(id)
+		main.count_kill(kind)                 # estadística de la run (Fase 9)
 		for i in int(k.ore):                  # botín según la variante (KINDS)
 			main.add_item(attacker, "ore")
 		main.add_coins(attacker, int(k.coins))   # MONETIZACIÓN: Núcleos
@@ -359,10 +374,11 @@ func damage_npc(id: int, dmg: int) -> void:
 	npcs[id].hp -= dmg
 	if npcs[id].hp <= 0:
 		var k := _kind_of(npcs[id])
+		var kind := str(npcs[id].kind)
 		var pos: Vector2 = npcs[id].pos
-		if main.world != null and main.world.fx != null:
-			main.world.fx.burst(pos, k.color, 16)
+		_death_fx(pos, k, kind)
 		npcs.erase(id)
+		main.count_kill(kind)                 # estadística de la run (Fase 9)
 		var nearest := _nearest_player(pos)
 		if nearest != -1:
 			for i in int(k.ore):
@@ -370,6 +386,44 @@ func damage_npc(id: int, dmg: int) -> void:
 			main.add_coins(nearest, int(k.coins))
 	elif main.world != null and main.world.fx != null:
 		main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)
+
+
+## Estallido al morir; el jefe además deja un anillo expansivo (Fase 9).
+func _death_fx(pos: Vector2, k: Dictionary, kind: String) -> void:
+	if main.world == null or main.world.fx == null:
+		return
+	main.world.fx.burst(pos, k.color, 16)
+	if kind == "jefe":
+		main.world.fx.burst(pos, Color("ffd9a0"), 24, 240.0)
+		main.world.fx.ring(pos, 180.0, Color("ff6040"))
+
+
+# FX cosmético del golpe a un bloque (Fase 9, pulido): "thud" audible
+# si el jugador local está cerca — oír que atacan tu muralla importa.
+@rpc("authority", "call_remote", "unreliable")
+func block_hit_fx(pos: Vector2) -> void:
+	_block_hit_fx(pos)
+
+
+func _block_hit_fx(pos: Vector2) -> void:
+	var me: Node2D = main.players.get(multiplayer.get_unique_id())
+	if me != null and me.position.distance_to(pos) < 900.0:
+		Sfx.play("golpe")
+
+
+# FX cosmético de la trampa de pinchos (Fase 8, pulido): salpicadura
+# + chasquido metálico cerca del jugador local.
+@rpc("authority", "call_remote", "unreliable")
+func spike_fx(pos: Vector2) -> void:
+	_spike_fx(pos)
+
+
+func _spike_fx(pos: Vector2) -> void:
+	if main.world != null and main.world.fx != null:
+		main.world.fx.burst(pos, Color(0.85, 0.2, 0.2), 6, 100.0)
+	var me: Node2D = main.players.get(multiplayer.get_unique_id())
+	if me != null and me.position.distance_to(pos) < 900.0:
+		Sfx.play("pinchos")
 
 
 func _nearest_player(pos: Vector2) -> int:
@@ -398,7 +452,7 @@ func sync_npcs(snap: Dictionary) -> void:
 		if main.world == null or main.world.fx == null:
 			break
 		if not fresh.has(id):
-			main.world.fx.burst(npcs[id].pos, _kind_of(npcs[id]).color, 16)
+			_death_fx(npcs[id].pos, _kind_of(npcs[id]), str(npcs[id].get("kind", "")))
 		elif float(fresh[id].ratio) < float(npcs[id].get("ratio", 1.0)) - 0.01:
 			main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)   # flash de golpe
 	npcs = fresh

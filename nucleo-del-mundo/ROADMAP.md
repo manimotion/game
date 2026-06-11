@@ -103,6 +103,24 @@ runs, no solo sandbox eterno.
    incluye un jefe, recompensa de Núcleos al amanecer (+25 en noche 3),
    victoria al sobrevivir 7 noches (panel + bono + reset a sandbox), derrota
    en supervivencia (panel + vida llena + reset a sandbox).
+5. ✅ PULIDO F7-F9 (2026-06-11) — pasada de "game feel" sobre todo lo anterior:
+   - Jefe con sprite propio (cuernos, corona, colmillos), rompe-murallas
+     (`block_dmg` 60; el grande también, 24), ENRAGE bajo 50% de vida
+     (más velocidad y salto), barra de vida del jefe en el HUD y anillo
+     expansivo + aviso global al derrotarlo.
+   - Run con estadísticas: contador de bajas (`run_kills`/`count_kill`),
+     panel de fin rediseñado (borde/título dorado o rojo según resultado,
+     noches/bajas/recursos/Núcleos), jingle de victoria/derrota y fuegos
+     artificiales al ganar.
+   - Defensa con feedback: flechas con estela + fogonazo y sonido al
+     disparar; trampa de pinchos con salpicadura y chasquido; "thud"
+     audible cuando un enemigo golpea tu muralla (rpcs cosméticos
+     unreliable con gate de distancia — el estado no cambia de canal).
+   - Mundo más vivo: fogata con aura parpadeante (más intensa de noche)
+     y brasas que flotan; chispas verdes al curar; sonidos de amanecer,
+     anochecer y rugido del jefe enganchados al prefijo del toast.
+   - Test headless: bajas por run, jefe rompe-murallas, panel con bajas,
+     sonidos nuevos presentes, barra del jefe y sprite propio del jefe.
 
 ## Fase 10+ — Evolución futura (del doc de visión, NO empezar aún)
 

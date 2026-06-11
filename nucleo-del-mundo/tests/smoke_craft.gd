@@ -435,6 +435,35 @@ func _ready() -> void:
 	_check("la run vuelve a modo sandbox tras la derrota",
 		main.game_mode == "sandbox" and main.night_number == 0)
 
+	# ---- TEST 25: PULIDO F9 — bajas de la run y jefe rompe-murallas ----
+	npcs_node.npcs.clear()
+	main.run_kills = 0
+	npcs_node._spawn_one("normal", wall_p)
+	var kid: int = npcs_node.npcs.keys()[0]
+	npcs_node.damage_npc(kid, 9999)
+	print("[25] bajas tras matar 1 NPC:", main.run_kills)
+	_check("count_kill registra las bajas de la run", main.run_kills == 1)
+	_check("el jefe es rompe-murallas (block_dmg propio > dmg)",
+		int(npcs_node.KINDS["jefe"].get("block_dmg", 0)) > int(npcs_node.KINDS["jefe"].dmg))
+	main._apply_run_ended(true, 7, 12)
+	_check("el panel de fin de run muestra los enemigos abatidos",
+		"12" in main._run_body.text and "abatidos" in main._run_body.text)
+	main._run_panel.hide()
+	npcs_node.npcs.clear()
+
+	# ---- TEST 26: PULIDO F7-F9 — sonidos nuevos y barra del jefe ----
+	var nuevos := ["flecha", "pinchos", "jefe", "noche", "amanecer", "victoria", "derrota"]
+	var faltan := []
+	for s: String in nuevos:
+		if not Sfx._streams.has(s):
+			faltan.append(s)
+	print("[26] sfx nuevos faltantes:", faltan)
+	_check("Sfx tiene los sonidos de torre/pinchos/jefe/fases/victoria/derrota", faltan.is_empty())
+	_check("existe la barra de vida del jefe en el HUD",
+		main._boss_panel != null and main._boss_bar != null)
+	_check("el jefe tiene sprite propio en el Atlas (no slime reteñido)",
+		Atlas.slimes["jefe"].get_width() == 24 and Atlas.slimes["jefe"].get_height() == 18)
+
 	# ---- TEST 13: arte y efectos nuevos ----
 	_check("Atlas genera 4 decoraciones de superficie", Atlas.deco.size() == 4)
 	var dl: float = main.world.daylight()

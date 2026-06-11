@@ -177,7 +177,7 @@ func _ready() -> void:
 	slimes["grande"] = _make_slime(Color("8a4ad0"), Color("5c2f96"), Color("c9a0f0"))
 	slimes["dorado"] = _make_slime(P_GOLD, P_GOLD_D, P_GOLD_L)
 	slimes["murcielago"] = _make_bat()
-	slimes["jefe"] = _make_slime(Color("d6453f"), Color("7a1f1c"), Color("ffd9a0"))
+	slimes["jefe"] = _make_boss()
 	sky_tex = _make_gradient(C_SKY_TOP, C_SKY_BOT)
 	under_tex = _make_gradient(C_UNDER_TOP, C_UNDER_BOT)
 	cloud_tex = _make_cloud()
@@ -485,6 +485,48 @@ func _make_bat() -> ImageTexture:
 				"W": img.set_pixel(x, y, Color("4a3d66"))
 				"B": img.set_pixel(x, y, Color("6b5b8e"))
 				"E": img.set_pixel(x, y, Color("ff4040"))
+	return ImageTexture.create_from_image(img)
+
+
+# Jefe (Fase 9, pulido): demonio con cuernos, corona, cejas furiosas
+# y colmillos. C=cuerno K=corona B=cuerpo D=sombra L=brillo
+# W=blanco (ojos/dientes) R=pupila roja M=fauces
+const BOSS := [
+	"...CC.....KKKK.....CC...",
+	"..CCC....KKKKKK....CCC..",
+	"..CCC..BBBBBBBBBB..CCC..",
+	"...CBBBBBBBBBBBBBBBBC...",
+	"..BBBBBBBBBBBBBBBBBBBB..",
+	".BBBLLBBBBBBBBBBBBBBBB..",
+	".BBLLBBDDBBBBBBDDBBBBBB.",
+	"BBBBBWWRBBBBBBBBRWWBBBBB",
+	"BBBBBWWRBBBBBBBBRWWBBBBB",
+	"BBBBBBBBBBBBBBBBBBBBBBBB",
+	"BBBBBBBBBBBBBBBBBBBBBBBB",
+	"BBBBMMMMMMMMMMMMMMMMBBBB",
+	"BBBBMWWMMWWMMWWMMWWMBBBB",
+	"BBBBMMMMMMMMMMMMMMMMBBBB",
+	".BBBBBBBBBBBBBBBBBBBBBB.",
+	".DBBBBBBBBBBBBBBBBBBBBD.",
+	"..DDBBBBBBBBBBBBBBBBDD..",
+	"....DDDDDDDDDDDDDDDD....",
+]
+
+
+func _make_boss() -> ImageTexture:
+	var img := Image.create(24, 18, false, Image.FORMAT_RGBA8)
+	for y in BOSS.size():
+		var row: String = BOSS[y]
+		for x in row.length():
+			match row[x]:
+				"C": img.set_pixel(x, y, Color("3a3a45"))
+				"K": img.set_pixel(x, y, P_GOLD)
+				"B": img.set_pixel(x, y, Color("d6453f"))
+				"D": img.set_pixel(x, y, Color("7a1f1c"))
+				"L": img.set_pixel(x, y, Color("ffd9a0"))
+				"W": img.set_pixel(x, y, Color.WHITE)
+				"R": img.set_pixel(x, y, Color("ff2020"))
+				"M": img.set_pixel(x, y, Color("4a0f0c"))
 	return ImageTexture.create_from_image(img)
 
 

@@ -31,6 +31,14 @@ func _ready() -> void:
 	_streams["meteoro"] = _make(160.0, 40.0, 0.8, 0.6, true)     # evento meteoro
 	_streams["fabricar"] = _make(392.0, 784.0, 0.20, 0.42, false) # craftear receta (GDD §8)
 	_streams["invasion"] = _make(140.0, 55.0, 0.45, 0.55, true)   # evento invasión de slimes
+	# Fases 7-9 (pulido): defensa activa, jefe y estructura de run
+	_streams["flecha"] = _make(900.0, 350.0, 0.07, 0.32, true)    # torre dispara
+	_streams["pinchos"] = _make(1200.0, 250.0, 0.09, 0.38, true)  # trampa de pinchos
+	_streams["jefe"] = _make(70.0, 38.0, 1.0, 0.6, true)          # rugido del jefe
+	_streams["noche"] = _make(220.0, 110.0, 0.6, 0.4, false)      # cae la noche
+	_streams["amanecer"] = _make(660.0, 990.0, 0.35, 0.3, false)  # amanece
+	_streams["victoria"] = _make_jingle([523.25, 659.25, 783.99, 1046.5], 0.16, 0.4)  # C E G C
+	_streams["derrota"] = _make_jingle([392.0, 329.63, 261.63, 196.0], 0.22, 0.4)     # G E C G desc.
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
@@ -124,6 +132,28 @@ func _note(buf: PackedFloat32Array, start_s: float, dur_s: float, freq: float, v
 		var env := minf(t / 0.12, 1.0) * (1.0 - t)
 		var ph := TAU * freq * float(i) / MUSIC_RATE
 		buf[idx] += (sin(ph) + 0.35 * sin(ph * 2.0)) * env * vol
+
+
+## Jingle: secuencia de notas senoidales (con armónico) una tras otra.
+## Para victoria/derrota — más musical que un barrido (Fase 9, pulido).
+func _make_jingle(freqs: Array, note_dur: float, vol: float) -> AudioStreamWAV:
+	var per := int(SAMPLE_RATE * note_dur)
+	var n := per * freqs.size()
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	for k in freqs.size():
+		var f: float = freqs[k]
+		for i in per:
+			var t := float(i) / float(per)
+			var env := minf(t / 0.08, 1.0) * (1.0 - t * 0.85)
+			var ph := TAU * f * float(i) / SAMPLE_RATE
+			var s := (sin(ph) + 0.3 * sin(ph * 2.0)) * env * vol
+			data.encode_s16((k * per + i) * 2, int(clampf(s, -1.0, 1.0) * 32000.0))
+	var w := AudioStreamWAV.new()
+	w.format = AudioStreamWAV.FORMAT_16_BITS
+	w.mix_rate = SAMPLE_RATE
+	w.data = data
+	return w
 
 
 ## Sintetiza un tono con barrido de frecuencia y envolvente decreciente.
