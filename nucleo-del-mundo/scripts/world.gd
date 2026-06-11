@@ -30,12 +30,17 @@ const T_ORE := 3
 const T_BEDROCK := 4
 const T_WOOD := 5             # tronco — decorativo, no colisiona
 const T_LEAF := 6             # hojas — decorativo, no colisiona
+const T_WALL := 7             # muralla craftable — sólida (Fase 7)
+const T_CAMPFIRE := 8         # fogata — respawn + regen, no sólida (Fase 7)
 
 # GDD §3.2: HP y drop por tipo de tile
-const HP := {T_DIRT: 40, T_STONE: 100, T_ORE: 140, T_WOOD: 60, T_LEAF: 20}
-const DROPS := {T_DIRT: "dirt", T_STONE: "stone", T_ORE: "ore", T_WOOD: "wood"}
-const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD}
-const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true}
+const HP := {T_DIRT: 40, T_STONE: 100, T_ORE: 140, T_WOOD: 60, T_LEAF: 20,
+	T_WALL: 400, T_CAMPFIRE: 200}
+const DROPS := {T_DIRT: "dirt", T_STONE: "stone", T_ORE: "ore", T_WOOD: "wood",
+	T_WALL: "muralla", T_CAMPFIRE: "fogata"}
+const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD,
+	"muralla": T_WALL, "fogata": T_CAMPFIRE}
+const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true}
 
 const REACH := 200.0          # alcance validado por el servidor
 
@@ -410,6 +415,44 @@ func apply_tile(coord: Vector2i, t: int) -> void:
 	if not is_loaded(chunk_of(coord)):
 		return
 	_set_tile(coord, t)
+
+
+# -------------------------------------------------------------
+# DAÑO POR NPC (Fase 7): los enemigos golpean bloques que les
+# cierran el paso. Sin drop — solo el jugador recibe botín.
+# -------------------------------------------------------------
+func damage_tile(coord: Vector2i, dmg: int) -> void:
+	if not multiplayer.is_server():
+		return
+	var t: int = tiles.get(coord, 0)
+	if t == 0 or not HP.has(t):
+		return
+	var hp_left: int = damage.get(coord, HP[t]) - dmg
+	if hp_left <= 0:
+		damage.erase(coord)
+		_set_tile(coord, 0)
+		apply_tile.rpc(coord, 0)
+	else:
+		damage[coord] = hp_left
+		damage_ratio[coord] = float(hp_left) / HP[t]
+		_redraw_at(coord)
+		if fx != null:
+			fx.burst(_tile_center(coord), Atlas.avg_color(t), 4, 90.0)
+		apply_damage.rpc(coord, damage_ratio[coord])
+
+
+## Posición de la fogata más cercana (Fase 7). INF si no hay.
+func nearest_campfire_pos(pos: Vector2) -> Vector2:
+	var best := 1e9
+	var best_pos := Vector2.INF
+	for c: Vector2i in tiles:
+		if tiles[c] == T_CAMPFIRE:
+			var cp := Vector2(c.x * TILE + TILE * 0.5, c.y * TILE - 20.0)
+			var d := pos.distance_to(cp)
+			if d < best:
+				best = d
+				best_pos = cp
+	return best_pos
 
 
 # -------------------------------------------------------------

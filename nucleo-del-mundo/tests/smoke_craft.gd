@@ -226,6 +226,85 @@ func _ready() -> void:
 	_check("la música se genera con datos", m != null and m.data.size() > 100000)
 	_check("la música está en loop", m.loop_mode == AudioStreamWAV.LOOP_FORWARD and m.loop_end > 0)
 
+	# ---- TEST 14: FASE 7 — muralla (craftable, apilable, 400 HP) ----
+	main.inventories[1] = {"stone": 20}
+	main._apply_inventory(main.inventories[1])
+	_check("RECIPES tiene muralla y fogata",
+		main.RECIPES.has("muralla") and main.RECIPES.has("fogata"))
+	main._do_craft("muralla", 1)
+	_check("muralla se craftea (consume 6 piedra)",
+		int(main.inventories[1].get("muralla", 0)) == 1 and int(main.inventories[1].get("stone", 0)) == 14)
+	main._do_craft("muralla", 1)
+	_check("muralla es apilable (se pueden fabricar varias)",
+		int(main.inventories[1].get("muralla", 0)) == 2 and int(main.inventories[1].get("stone", 0)) == 8)
+	_check("muralla es tile sólido con 400 HP",
+		w2.SOLID.has(w2.T_WALL) and w2.HP[w2.T_WALL] == 400)
+	_check("fogata NO es sólida y tiene 200 HP",
+		not w2.SOLID.has(w2.T_CAMPFIRE) and w2.HP[w2.T_CAMPFIRE] == 200)
+	_check("Atlas genera texturas de muralla y fogata",
+		Atlas.tiles.has(Atlas.T_WALL) and Atlas.tiles.has(Atlas.T_CAMPFIRE))
+
+	# ---- TEST 15: NPC ataca bloque que le cierra el paso ----
+	# Preparar zona de prueba limpia: vaciar área, poner suelo y muralla
+	var test_y := 40
+	for tx in range(16, 28):
+		for ty in range(test_y - 2, test_y + 3):
+			w2.tiles.erase(Vector2i(tx, ty))
+			w2.damage.erase(Vector2i(tx, ty))
+	for tx in range(16, 28):
+		w2.tiles[Vector2i(tx, test_y + 1)] = w2.T_STONE
+	var wall_c := Vector2i(21, test_y)
+	w2.tiles[wall_c] = w2.T_WALL
+	npcs_node.npcs.clear()
+	var wall_p: Node2D = main.players[1]
+	wall_p.position = Vector2(24 * w2.TILE, float(test_y * w2.TILE + 12))
+	npcs_node._spawn_one("normal", wall_p)
+	var nid_w: int = npcs_node.npcs.keys()[0]
+	# NPC a la izquierda de la muralla, sobre el suelo, SIN saltar
+	npcs_node.npcs[nid_w].pos = Vector2(658.0, float((test_y + 1) * w2.TILE - 10))
+	npcs_node.npcs[nid_w].block_cd = 0.0
+	npcs_node.npcs[nid_w].jump_t = 10.0
+	npcs_node._simulate(0.033)
+	var wall_dmg_exists: bool = w2.damage.has(wall_c)
+	var wall_hp_now: int = w2.damage.get(wall_c, w2.HP[w2.T_WALL])
+	print("[15] muralla dañada:", wall_dmg_exists, " HP:", wall_hp_now, "/", w2.HP[w2.T_WALL])
+	_check("NPC daña el bloque que le cierra el paso",
+		wall_dmg_exists and wall_hp_now < w2.HP[w2.T_WALL])
+	# Limpiar zona
+	for tx in range(16, 28):
+		for ty in range(test_y - 2, test_y + 3):
+			w2.tiles.erase(Vector2i(tx, ty))
+
+	# ---- TEST 16: fogata — regen nocturna solo en su aura ----
+	var camp_c := Vector2i(25, 17)
+	w2.tiles[camp_c] = w2.T_CAMPFIRE
+	main.is_night = true
+	main.player_hp[1] = 50
+	wall_p.position = Vector2(25 * w2.TILE + 16, 17 * w2.TILE)
+	main._regen_tick()
+	_check("regen nocturna funciona CERCA de la fogata",
+		int(main.player_hp[1]) == 50 + main.REGEN_AMOUNT)
+	main.player_hp[1] = 50
+	wall_p.position = Vector2(1 * w2.TILE, 1 * w2.TILE)
+	main._regen_tick()
+	_check("regen nocturna NO funciona LEJOS de la fogata",
+		int(main.player_hp[1]) == 50)
+	main.is_night = false
+	main._regen_tick()
+	_check("regen diurna funciona en todas partes",
+		int(main.player_hp[1]) == 50 + main.REGEN_AMOUNT)
+
+	# ---- TEST 17: respawn en fogata más cercana ----
+	wall_p.position = Vector2(25 * w2.TILE, 17 * w2.TILE)
+	main.player_hp[1] = 1
+	main.damage_player(1, 10)
+	var spawn_d: float = wall_p.position.distance_to(Vector2(camp_c.x * w2.TILE + 16, camp_c.y * w2.TILE - 20))
+	print("[17] respawn cerca de fogata, distancia:", spawn_d)
+	_check("el jugador respawnea cerca de la fogata",
+		spawn_d < main.FOGATA_RANGE)
+	w2.tiles.erase(camp_c)
+	w2.tiles.erase(wall_c)
+
 	# ---- TEST 13: arte y efectos nuevos ----
 	_check("Atlas genera 4 decoraciones de superficie", Atlas.deco.size() == 4)
 	var dl: float = main.world.daylight()

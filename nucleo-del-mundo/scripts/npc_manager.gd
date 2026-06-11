@@ -20,6 +20,7 @@ const CHASE_RANGE := 320.0
 const CONTACT_COOLDOWN := 0.8
 const HIT_REACH := 200.0
 const SPAWN_EVERY := 15.0
+const BLOCK_CD := 1.0          # cooldown de ataque a tiles (Fase 7)
 
 # Variantes de NPC: stats + botín + tamaño visual (la colisión usa
 # SIZE para todas — solo cambia el dibujo). "fly" = vuela sin
@@ -132,6 +133,7 @@ func _simulate(delta: float) -> void:
 		var k := _kind_of(n)
 		n.cool = maxf(0.0, n.cool - delta)
 		n.jump_t = maxf(0.0, n.jump_t - delta)
+		n.block_cd = maxf(0.0, n.get("block_cd", 0.0) - delta)
 
 		# FSM: elegir objetivo (jugador más cercano)
 		var target: Node2D = null
@@ -161,6 +163,20 @@ func _simulate(delta: float) -> void:
 					n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
 			n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
 		_move(n, delta, w)
+
+		# Fase 7: NPCs terrestres golpean el bloque que les cierra el
+		# paso hacia el jugador (murallas, terreno). Los voladores lo
+		# esquivan por arriba.
+		if not bool(k.get("fly", false)) and target != null \
+				and best < CHASE_RANGE and n.block_cd <= 0.0:
+			var dir_x := signf(target.position.x - n.pos.x)
+			if dir_x != 0.0:
+				var bx := floori((n.pos.x + dir_x * (SIZE.x * 0.5 + 2.0)) / w.TILE)
+				var by := floori(n.pos.y / w.TILE)
+				var bc := Vector2i(bx, by)
+				if w.is_solid(bc) and w.HP.has(w.tiles.get(bc, 0)):
+					n.block_cd = BLOCK_CD
+					w.damage_tile(bc, int(k.dmg))
 
 		# Daño por contacto
 		if n.cool <= 0.0:
@@ -210,7 +226,7 @@ func _spawn_one(kind: String, near: Node2D) -> void:
 	if bool(KINDS[kind].get("fly", false)):
 		pos.y -= randf_range(80.0, 160.0)   # los voladores aparecen en el aire
 	npcs[_next_id] = {"pos": pos, "vel": Vector2.ZERO, "hp": int(KINDS[kind].hp),
-		"kind": kind, "cool": 0.0, "jump_t": randf_range(0.0, 1.0)}
+		"kind": kind, "cool": 0.0, "jump_t": randf_range(0.0, 1.0), "block_cd": 0.0}
 	_next_id += 1
 
 

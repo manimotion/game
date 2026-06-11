@@ -41,16 +41,25 @@ runs, no solo sandbox eterno.
 5. ✅ Primer enemigo nuevo: **murciélago** (volador, nocturno, sin gravedad,
    persigue en línea recta; `fly: true` en `KINDS`).
 
-## Fase 7 — La base importa: defensa pasiva 🎯 SIGUIENTE
+## Fase 7 — La base importa: defensa pasiva ✅ HECHA (2026-06-11)
 
-1. **Muralla**: tile craftable (piedra), HP alto (~400). De noche los slimes
-   **atacan los bloques** que les cierran el paso (FSM: si está bloqueado hacia
-   el jugador, golpea el tile). Mismo pipeline de HP/grietas que el minado.
-2. **Fogata/refugio**: tile especial — punto de respawn del equipo y aura de
-   regeneración (la regen global de hoy migra aquí). Una por base.
-3. Test headless: muralla absorbe daño de slime; regen solo cerca de fogata.
+1. ✅ **Muralla** (`T_WALL`): tile craftable (6 piedra), 400 HP, sólida. Los
+   slimes terrestres **golpean bloques** que les cierran el paso hacia el
+   jugador (`damage_tile`, cooldown `BLOCK_CD=1s`). Los murciélagos NO atacan
+   bloques (vuelan por encima). Mismo pipeline de HP/grietas que el minado.
+2. ✅ **Fogata** (`T_CAMPFIRE`): tile craftable (8 madera + 4 piedra), 200 HP,
+   no sólida. De noche: regeneración SOLO cerca de fogata (radio 8 tiles).
+   De día: regeneración global como antes. Respawn del jugador en la fogata
+   más cercana (si existe) en vez de en la superficie.
+3. ✅ Crafting apilable: muralla y fogata se fabrican en múltiples unidades
+   (los equipos siguen siendo únicos). Panel "Fabricar" muestra `(N)` en vez
+   de `✓`.
+4. ✅ Texturas pixel-art en atlas.gd (ladrillos para muralla, leños+llama
+   para fogata), aura cálida visual en chunk_renderer.
+5. ✅ Test headless: muralla absorbe 8 dmg del slime (392/400), regen nocturna
+   solo cerca de fogata, regen diurna global, respawn en fogata.
 
-## Fase 8 — Defensa activa (torres y trampas)
+## Fase 8 — Defensa activa (torres y trampas) 🎯 SIGUIENTE
 
 1. **Torre de flechas**: entidad simulada en servidor (mismo patrón que
    `npc_manager`: estado en servidor, snapshot 10 Hz, clientes dibujan).

@@ -28,7 +28,8 @@ const NpcScript := preload("res://scripts/npc_manager.gd")
 
 const SAVE_PATH := "user://nucleo_save.json.gz"
 
-const ITEM_NAMES := {"dirt": "Tierra", "stone": "Piedra", "wood": "Madera", "ore": "Mineral"}
+const ITEM_NAMES := {"dirt": "Tierra", "stone": "Piedra", "wood": "Madera", "ore": "Mineral",
+	"muralla": "Muralla", "fogata": "Fogata"}
 
 # GDD §8.1 — recetas: picos (minan), espadas (combate) y armaduras
 # (reducen daño). Los diccionarios *_DAMAGE/_REDUCTION van del mejor
@@ -43,6 +44,8 @@ const RECIPES := {
 	"armadura_madera": {"nombre": "Armadura de madera", "costo": {"wood": 20}},
 	"armadura_piedra": {"nombre": "Armadura de piedra", "costo": {"stone": 30}},
 	"armadura_dorada": {"nombre": "Armadura dorada", "costo": {"stone": 10, "ore": 15}},
+	"muralla": {"nombre": "Muralla", "costo": {"stone": 6}},
+	"fogata": {"nombre": "Fogata", "costo": {"wood": 8, "stone": 4}},
 }
 const TOOL_DAMAGE := {"pico_dorado": 100, "pico_piedra": 60, "pico_madera": 35}
 const WEAPON_DAMAGE := {"espada_dorada": 60, "espada_piedra": 38, "espada_madera": 24}
@@ -53,6 +56,7 @@ const REGEN_EVERY := 4.0     # segundos entre ticks de regeneración de vida
 const REGEN_AMOUNT := 3      # vida recuperada por tick (solo servidor)
 const METEOR_WARN := 3.0     # segundos de aviso antes del impacto del meteoro
 const TOAST_LIFE := 4.5      # segundos visibles del toast antes de desvanecerse
+const FOGATA_RANGE := 256.0  # radio del aura de la fogata (8 tiles) — Fase 7
 
 # Fase 6 — ciclo día/noche JUGABLE (ROADMAP.md): el servidor es el reloj
 const DAY_SECONDS := 180.0   # duración del día
@@ -461,7 +465,9 @@ func _do_craft(recipe_id: String, peer_id: int) -> void:
 	if not RECIPES.has(recipe_id):
 		return
 	var inv: Dictionary = inventories.get(peer_id, {})
-	if int(inv.get(recipe_id, 0)) > 0:
+	# Equipo (picos/espadas/armaduras) es único; bloques son apilables
+	var is_unique := recipe_id.begins_with("pico_") or recipe_id.begins_with("espada_") or recipe_id.begins_with("armadura_")
+	if is_unique and int(inv.get(recipe_id, 0)) > 0:
 		_toast_to(peer_id, "Ya tienes: %s" % RECIPES[recipe_id].nombre)
 		return
 	var costo: Dictionary = RECIPES[recipe_id].costo
@@ -471,7 +477,10 @@ func _do_craft(recipe_id: String, peer_id: int) -> void:
 			return
 	for item: String in costo:
 		inv[item] = int(inv[item]) - int(costo[item])
-	inv[recipe_id] = 1
+	if is_unique:
+		inv[recipe_id] = 1
+	else:
+		inv[recipe_id] = int(inv.get(recipe_id, 0)) + 1
 	inventories[peer_id] = inv
 	_push_inventory(peer_id)
 	_toast_to(peer_id, "🛠️ Fabricaste: %s" % RECIPES[recipe_id].nombre)
@@ -621,7 +630,13 @@ func damage_player(peer_id: int, dmg: int) -> void:
 	var hp: int = player_hp.get(peer_id, PLAYER_MAX_HP) - dmg
 	if hp <= 0:
 		hp = PLAYER_MAX_HP
-		var pos: Vector2 = world.surface_spawn(randi_range(4, world.W - 5))
+		# Respawn en la fogata más cercana (Fase 7), o en la superficie
+		var camp: Vector2 = world.nearest_campfire_pos(players[peer_id].position)
+		var pos: Vector2
+		if camp.x < 1e8:
+			pos = camp
+		else:
+			pos = world.surface_spawn(randi_range(4, world.W - 5))
 		if peer_id == 1:
 			players[1].position = pos
 			players[1].velocity = Vector2.ZERO
@@ -659,12 +674,14 @@ func _set_hp(hp: int) -> void:
 	_refresh_info()
 
 
-## Tick de regeneración (solo servidor): cura poco a poco a todos
-## los jugadores vivos hasta PLAYER_MAX_HP.
+## Tick de regeneración (solo servidor): de noche solo cura cerca
+## de una fogata (Fase 7); de día cura en todas partes.
 func _regen_tick() -> void:
 	for pid: int in player_hp.keys():
 		var hp: int = player_hp[pid]
 		if hp >= PLAYER_MAX_HP or not players.has(pid):
+			continue
+		if is_night and not _near_campfire(players[pid].position):
 			continue
 		player_hp[pid] = mini(hp + REGEN_AMOUNT, PLAYER_MAX_HP)
 		if pid == 1:
@@ -672,6 +689,13 @@ func _regen_tick() -> void:
 				_set_hp(player_hp[1])
 		else:
 			update_health.rpc_id(pid, player_hp[pid])
+
+
+func _near_campfire(pos: Vector2) -> bool:
+	if world == null:
+		return false
+	var cp: Vector2 = world.nearest_campfire_pos(pos)
+	return cp.x < 1e8 and cp.distance_to(pos) <= FOGATA_RANGE
 
 
 # -------------------------------------------------------------
@@ -1012,6 +1036,8 @@ func _show_hud() -> void:
 	# --- Inventario + info (abajo a la derecha) ---
 	var hud := VBoxContainer.new()
 	hud.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	hud.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	hud.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	hud.position += Vector2(-16, -16)
 	hud.add_theme_constant_override("separation", 8)
 	_ui.add_child(hud)
@@ -1027,7 +1053,7 @@ func _show_hud() -> void:
 	hud.add_child(slots)
 
 	var group := ButtonGroup.new()
-	for item: String in ["dirt", "stone", "wood"]:
+	for item: String in ["dirt", "stone", "wood", "muralla", "fogata"]:
 		var b := Button.new()
 		b.toggle_mode = true
 		b.button_group = group
@@ -1041,9 +1067,11 @@ func _show_hud() -> void:
 	# --- Botón y panel de crafting (arriba a la derecha) ---
 	var craft_btn := Button.new()
 	craft_btn.text = "🛠️ Fabricar"
-	craft_btn.custom_minimum_size = Vector2(140, 52)
+	craft_btn.custom_minimum_size = Vector2(150, 52)
 	craft_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	craft_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	craft_btn.position += Vector2(-12, 10)
+	craft_btn.z_index = 2
 	_ui.add_child(craft_btn)
 	_craft_btn = craft_btn
 
@@ -1062,10 +1090,18 @@ func _show_hud() -> void:
 	pbox.add_theme_constant_override("separation", 10)
 	panel.add_child(pbox)
 
+	var ptop := HBoxContainer.new()
+	pbox.add_child(ptop)
 	var ptitle := Label.new()
-	ptitle.text = "🛠️ Fabricación de picos"
+	ptitle.text = "🛠️ Fabricar (usa materiales, NO Núcleos)"
 	ptitle.add_theme_font_size_override("font_size", 18)
-	pbox.add_child(ptitle)
+	ptitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ptop.add_child(ptitle)
+	var pclose := Button.new()
+	pclose.text = "✕"
+	pclose.custom_minimum_size = Vector2(40, 40)
+	pclose.pressed.connect(func(): panel.hide())
+	ptop.add_child(pclose)
 
 	for rid: String in RECIPES:
 		var row := HBoxContainer.new()
@@ -1086,10 +1122,12 @@ func _show_hud() -> void:
 
 	# --- Botón y panel de la TIENDA de skins (MONETIZACIÓN) ---
 	var shop_btn := Button.new()
-	shop_btn.text = "🛒 Tienda"
-	shop_btn.custom_minimum_size = Vector2(140, 52)
+	shop_btn.text = "🛒 Tienda (skins)"
+	shop_btn.custom_minimum_size = Vector2(170, 52)
 	shop_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	shop_btn.position += Vector2(-164, 10)
+	shop_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	shop_btn.position += Vector2(-174, 10)
+	shop_btn.z_index = 2
 	shop_btn.pressed.connect(_on_shop_pressed)
 	_ui.add_child(shop_btn)
 	_shop_btn = shop_btn
@@ -1107,9 +1145,17 @@ func _show_hud() -> void:
 	sbox.add_theme_constant_override("separation", 10)
 	spanel.add_child(sbox)
 
+	var stop := HBoxContainer.new()
+	sbox.add_child(stop)
 	_shop_title = Label.new()
 	_shop_title.add_theme_font_size_override("font_size", 18)
-	sbox.add_child(_shop_title)
+	_shop_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stop.add_child(_shop_title)
+	var sclose := Button.new()
+	sclose.text = "✕"
+	sclose.custom_minimum_size = Vector2(40, 40)
+	sclose.pressed.connect(func(): spanel.hide())
+	stop.add_child(sclose)
 
 	for sid: String in SKINS:
 		var srow := HBoxContainer.new()
@@ -1179,11 +1225,18 @@ func _refresh_craft() -> void:
 				alcanza = false
 			partes.append("%s %d/%d" % [ITEM_NAMES[item].to_lower(), tengo, necesito])
 		var tiene := int(_my_inv.get(rid, 0)) > 0
+		var is_unique := rid.begins_with("pico_") or rid.begins_with("espada_") or rid.begins_with("armadura_")
 		var row: Dictionary = _craft_rows[rid]
 		var lbl: Label = row.label
 		var btn: Button = row.button
-		lbl.text = "%s%s — %s" % ["✓ " if tiene else "", RECIPES[rid].nombre, ", ".join(partes)]
-		btn.disabled = tiene or not alcanza
+		if is_unique:
+			lbl.text = "%s%s — %s" % ["✓ " if tiene else "", RECIPES[rid].nombre, ", ".join(partes)]
+			btn.disabled = tiene or not alcanza
+		else:
+			var count := int(_my_inv.get(rid, 0))
+			var prefix := "(%d) " % count if count > 0 else ""
+			lbl.text = "%s%s — %s" % [prefix, RECIPES[rid].nombre, ", ".join(partes)]
+			btn.disabled = not alcanza
 
 
 func _refresh_info() -> void:

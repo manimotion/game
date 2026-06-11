@@ -21,6 +21,8 @@ const T_ORE := 3
 const T_BEDROCK := 4
 const T_WOOD := 5
 const T_LEAF := 6
+const T_WALL := 7
+const T_CAMPFIRE := 8
 
 # ---- PALETA (tierras cálidas + verdes naturales, saturación contenida) ----
 const P_DIRT := Color("9b6a42")
@@ -43,6 +45,14 @@ const P_WOOD_L := Color("8f5f36")
 const P_LEAF := Color("4e9b3c")
 const P_LEAF_D := Color("3e7e30")
 const P_LEAF_L := Color("66b54e")
+const P_WALL := Color("5a5a68")
+const P_WALL_D := Color("3e3e4a")
+const P_WALL_L := Color("7a7a8a")
+const P_FIRE := Color("f0a030")
+const P_FIRE_L := Color("f0d868")
+const P_FIRE_D := Color("c04020")
+const P_LOG := Color("5a3a1e")
+const P_LOG_D := Color("3e2a14")
 
 const C_SKY_TOP := Color("3e7fc9")
 const C_SKY_BOT := Color("a8d8f0")
@@ -135,7 +145,7 @@ var hill_near_tex: ImageTexture
 
 
 func _ready() -> void:
-	for t in [T_DIRT, T_STONE, T_ORE, T_BEDROCK, T_WOOD, T_LEAF]:
+	for t in [T_DIRT, T_STONE, T_ORE, T_BEDROCK, T_WOOD, T_LEAF, T_WALL, T_CAMPFIRE]:
 		tiles[t] = []
 		for v in VARIANTS:
 			tiles[t].append(_make_tile(t, v))
@@ -208,7 +218,7 @@ func _make_tile(t: int, v: int) -> ImageTexture:
 		for x in PX:
 			img.set_pixel(x, y, _tile_pixel(t, v, x, y))
 	match t:
-		T_DIRT, T_STONE, T_ORE, T_LEAF:
+		T_DIRT, T_STONE, T_ORE, T_LEAF, T_WALL:
 			_bevel(img)
 	# color promedio (para las partículas de minado)
 	for y in PX:
@@ -266,6 +276,34 @@ func _tile_pixel(t: int, v: int, x: int, y: int) -> Color:
 			if _h(x, y, v + 8) < 0.10:
 				c = P_LEAF_D
 			return c
+		T_WALL:
+			# Muralla: ladrillos de piedra tallada con mortero (Fase 7)
+			var row := y / 4
+			var off := 4 if row % 2 != 0 else 0
+			var bx := (x + off) % 8
+			if y % 4 == 0 or bx == 0:
+				return P_WALL_D
+			var c := P_WALL.lerp(P_WALL_L, n * 0.3)
+			if _h(x, y, v + 15) < 0.1:
+				c = P_WALL_D.lerp(P_WALL, 0.5)
+			return c
+		T_CAMPFIRE:
+			# Fogata: leños abajo, llama arriba (Fase 7)
+			if y >= 12:
+				if (y == 12 or y == 13) and x >= 3 and x <= 12:
+					return P_LOG if _h(x, y, v + 20) > 0.3 else P_LOG_D
+				return Color.TRANSPARENT
+			var fx := absf(float(x) - 7.5)
+			var fy := float(12 - y)
+			var fw := 5.0 * (1.0 - fy / 14.0)
+			if fx < fw and fy > 0:
+				var heat := (1.0 - fx / fw) * (1.0 - fy / 14.0)
+				if heat > 0.55:
+					return P_FIRE_L
+				elif heat > 0.25:
+					return P_FIRE
+				return P_FIRE_D
+			return Color.TRANSPARENT
 	return P_DIRT
 
 

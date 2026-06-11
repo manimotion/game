@@ -30,6 +30,11 @@ func _draw() -> void:
 			var dark := clampf(float(coord.y - world.SKY_ROWS) / DEPTH_ROWS, 0.0, DEPTH_MAX)
 			var mod := Color(1.0 - dark, 1.0 - dark, 1.0 - dark)
 			draw_texture_rect(Atlas.tile_tex(tt, coord, air_above), rect, false, mod)
+			# Fogata: aura cálida (solo visual, Fase 7)
+			if tt == world.T_CAMPFIRE:
+				var center := Vector2(lx * t + t * 0.5, ly * t + t * 0.5)
+				draw_circle(center, 48.0, Color(1.0, 0.7, 0.3, 0.06))
+				draw_circle(center, 28.0, Color(1.0, 0.6, 0.25, 0.10))
 			# Decoración sobre el césped: hierba alta y flores (solo adorno)
 			if tt == world.T_DIRT and air_above and Atlas._h(coord.x, coord.y, 13) < 0.35:
 				var di := int(Atlas._h(coord.x, coord.y, 14) * Atlas.deco.size()) % Atlas.deco.size()

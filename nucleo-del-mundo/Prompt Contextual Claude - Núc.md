@@ -16,9 +16,9 @@ El juego consiste en:
 - Jugador con movimiento, salto y físicas
 - Sistema de bloques (minar y construir)
 - Exploración vertical en 3 capas:
-    - Cielo (islas flotantes)
-    - Superficie
-    - Subsuelo
+	- Cielo (islas flotantes)
+	- Superficie
+	- Subsuelo
 
 El gameplay principal es:
 
@@ -97,9 +97,9 @@ Ejemplo:
 2.  Evitar sobreingeniería
 3.  Mantener sistemas modulares
 4.  Separar claramente:
-    - Engine
-    - Tema
-    - Campaña
+	- Engine
+	- Tema
+	- Campaña
 
 # 🔥 ESTADO ACTUAL DEL PROYECTO
 

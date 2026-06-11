@@ -6,9 +6,9 @@ supervivencia por noches — de día recolectas y construyes, de noche defiendes
 el objetivo es sobrevivir X noches. La base (murallas, torres, trampas) es una
 vía de progresión tan importante como el equipo. El plan por fases está en
 `ROADMAP.md`; el GDD original sigue siendo la referencia técnica de los sistemas
-base. Estado: Fases 1-6 completadas (core sandbox + monetización + arte/SFX
-procedurales + ciclo día/noche jugable con modos Supervivencia/Sandbox);
-la Fase 7 (defensa pasiva: murallas y fogata) es lo siguiente.
+base. Estado: Fases 1-7 completadas (core sandbox + monetización + arte/SFX
+procedurales + ciclo día/noche jugable + defensa pasiva con murallas y fogatas);
+la Fase 8 (defensa activa: torres y trampas) es lo siguiente.
 El plan de negocio y el camino a cobrar dinero real está en `MONETIZACION.md`.
 
 ## Comandos
@@ -71,16 +71,19 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   al arrancar; la música es un loop suave Am–F–C–G, omitida en headless). 100% local y
   cosmético: nunca viaja por red ni toca estado del juego.
 - `scripts/main.gd` — lobby (modos Supervivencia/Sandbox), HUD (fase del ciclo, barra de
-  vida, equipo, toast central con desvanecido), spawn, inventarios (servidor), crafting,
-  vida/respawn + regeneración lenta, RELOJ DE PARTIDA día/noche (Fase 6: `is_night`,
-  `night_number`, `_set_phase` dispara `night_wave`; solo el servidor cambia de fase),
-  persistencia (gzip JSON en `user://nucleo_save.json.gz`; las runs de supervivencia NO
-  guardan), scheduler (autosave, meteoro diurno con aviso), modo `--server`. MONETIZACIÓN:
-  catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles` persistidos (v4).
-- `scripts/world.gd` — tiles, chunks/streaming, HP por tile, minado/colocación, generación
-  con cuevas (ruido 2D) e islas flotantes, luz día/noche (`daylight()` delega en el reloj
-  de partida de main.gd), meteoro (FX de impacto + sacudida de cámara), validaciones
-  de alcance.
+  vida, equipo, toast central con desvanecido), spawn, inventarios (servidor), crafting
+  (equipo único + bloques apilables: muralla/fogata), vida/respawn en fogata más cercana +
+  regeneración nocturna solo cerca de fogata (Fase 7), RELOJ DE PARTIDA día/noche (Fase 6:
+  `is_night`, `night_number`, `_set_phase` dispara `night_wave`; solo el servidor cambia de
+  fase), persistencia (gzip JSON en `user://nucleo_save.json.gz`; las runs de supervivencia
+  NO guardan), scheduler (autosave, meteoro diurno con aviso), modo `--server`.
+  MONETIZACIÓN: catálogo `SKINS`, Núcleos (`add_coins`), tienda 🛒 y perfiles `profiles`
+  persistidos (v4).
+- `scripts/world.gd` — tiles (incluye T_WALL 400 HP y T_CAMPFIRE 200 HP — Fase 7),
+  chunks/streaming, HP por tile, minado/colocación, `damage_tile()` para daño de NPCs,
+  `nearest_campfire_pos()`, generación con cuevas (ruido 2D) e islas flotantes, luz
+  día/noche (`daylight()` delega en el reloj de partida de main.gd), meteoro (FX de
+  impacto + sacudida de cámara), validaciones de alcance.
 - `scripts/fx.gd` — partículas, textos flotantes ("+N item"), anillos de impacto y ambiente
   (luciérnagas/polen/polvo). 100% visual y local, nunca toca estado.
 - `scripts/player.gd` — física AABB, cámara (con `shake()`), input (joystick táctil +
@@ -88,7 +91,8 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
 - `scripts/npc_manager.gd` — enemigos FSM con variantes en `KINDS` (slimes
   normal/grande/dorado + murciélago volador `fly: true`, nocturno); oleadas nocturnas
   vía `night_wave(noche)` (3+noche enemigos, escala con la noche); de noche el spawn
-  regular también se acelera.
+  regular también se acelera. Fase 7: los slimes terrestres golpean bloques sólidos
+  que les cierran el paso (`damage_tile`, cooldown `BLOCK_CD`).
 - `scripts/virtual_joystick.gd` — joystick multi-touch; consume sus toques con
   `set_input_as_handled()` para no interferir con minar.
 - `scripts/chunk_renderer.gd` — dibujo por chunk con grietas de daño y decoración
@@ -102,8 +106,9 @@ La UI se construye por código en `main.gd` (sin .tscn complejos, decisión de p
 - GDScript tipado (`:=`, tipos en parámetros y retornos). Comentarios en español con
   referencia a la sección del GDD que implementan (ej. `# GDD §6`).
 - RPCs: `reliable` para acciones/estado, `unreliable_ordered` solo para posiciones.
-- Items son strings: materiales (`dirt`, `stone`, `wood`, `ore`) y equipo craftable
-  (`pico_*`, `espada_*`, `armadura_*` en madera/piedra/dorado — claves de `RECIPES`).
+- Items son strings: materiales (`dirt`, `stone`, `wood`, `ore`), equipo craftable
+  (`pico_*`, `espada_*`, `armadura_*` — únicos, max 1) y bloques craftables apilables
+  (`muralla`, `fogata` — se colocan con ITEM_TILE).
   Picos minan (`TOOL_DAMAGE`), espadas pegan a NPCs (`WEAPON_DAMAGE`), armaduras
   reducen daño recibido (`ARMOR_REDUCTION`); el servidor consulta el inventario real.
 - Skins son strings (claves de `SKINS` en main.gd). Los Núcleos NO son item de inventario:
