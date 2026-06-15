@@ -23,14 +23,26 @@ extends Node2D
 
 const PlayerScript := preload("res://scripts/player.gd")
 const WorldScript := preload("res://scripts/world.gd")
-const JoystickScript := preload("res://scripts/virtual_joystick.gd")
 const NpcScript := preload("res://scripts/npc_manager.gd")
 const TowerScript := preload("res://scripts/tower_manager.gd")
+const GameModesScript := preload("res://scripts/game_modes.gd")  # CAPA DE REGLAS
+const UiBuilderScript := preload("res://scripts/ui_builder.gd")  # CAPA DE PRESENTACIÓN
 
 const SAVE_PATH := "user://nucleo_save.json.gz"
+# Ajustes LOCALES por dispositivo (NO viajan por red, NO son del save de
+# partida): por ahora solo el modo de control móvil/PC.
+const SETTINGS_PATH := "user://nucleo_settings.cfg"
+const CONTROL_MODES := ["auto", "movil", "pc"]
 
 const ITEM_NAMES := {"dirt": "Tierra", "stone": "Piedra", "wood": "Madera", "ore": "Mineral",
-	"muralla": "Muralla", "fogata": "Fogata", "trampa": "Trampa", "torre": "Torre"}
+	"cristal": "Cristal", "muralla": "Muralla", "fogata": "Fogata", "trampa": "Trampa", "torre": "Torre",
+	"pluma": "Pluma", "esencia": "Esencia", "diamante": "Diamante", "ascua": "Ascua",
+	"torre_mega": "Torre mega"}
+
+# Contador de minerales del HUD (petición del jugador: faltaba ver
+# diamantes/cristal/etc.). Orden e icono de cada material precioso.
+const MINERAL_ICONS := {"ore": "⛏️", "cristal": "🔷", "diamante": "💎",
+	"pluma": "🪶", "esencia": "🌀", "ascua": "🔥"}
 
 # GDD §8.1 — recetas: picos (minan), espadas (combate) y armaduras
 # (reducen daño). Los diccionarios *_DAMAGE/_REDUCTION van del mejor
@@ -39,20 +51,35 @@ const RECIPES := {
 	"pico_madera": {"nombre": "Pico de madera", "costo": {"wood": 8}},
 	"pico_piedra": {"nombre": "Pico de piedra", "costo": {"wood": 4, "stone": 12}},
 	"pico_dorado": {"nombre": "Pico dorado", "costo": {"wood": 4, "ore": 8}},
+	"pico_cristal": {"nombre": "Pico de cristal", "costo": {"wood": 4, "cristal": 6}},
 	"espada_madera": {"nombre": "Espada de madera", "costo": {"wood": 10}},
 	"espada_piedra": {"nombre": "Espada de piedra", "costo": {"wood": 4, "stone": 16}},
 	"espada_dorada": {"nombre": "Espada dorada", "costo": {"wood": 4, "ore": 10}},
+	"espada_diamante": {"nombre": "Espada de diamante", "costo": {"wood": 4, "diamante": 6, "ascua": 4}},
 	"armadura_madera": {"nombre": "Armadura de madera", "costo": {"wood": 20}},
 	"armadura_piedra": {"nombre": "Armadura de piedra", "costo": {"stone": 30}},
 	"armadura_dorada": {"nombre": "Armadura dorada", "costo": {"stone": 10, "ore": 15}},
+	"armadura_diamante": {"nombre": "Armadura de diamante", "costo": {"stone": 10, "diamante": 8, "esencia": 4, "pluma": 4}},
 	"muralla": {"nombre": "Muralla", "costo": {"stone": 6}},
 	"fogata": {"nombre": "Fogata", "costo": {"wood": 8, "stone": 4}},
 	"trampa": {"nombre": "Trampa de pinchos", "costo": {"stone": 10, "ore": 4}},
 	"torre": {"nombre": "Torre de flechas", "costo": {"stone": 20, "wood": 10, "ore": 15}},
+	"torre_mega": {"nombre": "Torre mega", "costo": {"stone": 20, "diamante": 6, "ascua": 4, "cristal": 4}},
 }
-const TOOL_DAMAGE := {"pico_dorado": 100, "pico_piedra": 60, "pico_madera": 35}
-const WEAPON_DAMAGE := {"espada_dorada": 60, "espada_piedra": 38, "espada_madera": 24}
-const ARMOR_REDUCTION := {"armadura_dorada": 6, "armadura_piedra": 4, "armadura_madera": 2}
+# Cadenas de mejora de equipo único: el panel de Fabricar muestra UNA
+# fila por familia con la SIGUIENTE mejora disponible — para craftear
+# el tier N+1 hace falta tener ya el tier N (ver _do_craft/_next_tier).
+# Bloque 2 "Progresión elemental": espada/armadura suman un tier final que
+# consume los minerales de los Bloques 1 — torre_mega NO entra aquí (es un
+# bloque apilable más, sin cadena, ver tower_manager.MEGA_*).
+const TIER_CHAINS := {
+	"pico": ["pico_madera", "pico_piedra", "pico_dorado", "pico_cristal"],
+	"espada": ["espada_madera", "espada_piedra", "espada_dorada", "espada_diamante"],
+	"armadura": ["armadura_madera", "armadura_piedra", "armadura_dorada", "armadura_diamante"],
+}
+const TOOL_DAMAGE := {"pico_cristal": 150, "pico_dorado": 100, "pico_piedra": 60, "pico_madera": 35}
+const WEAPON_DAMAGE := {"espada_diamante": 90, "espada_dorada": 60, "espada_piedra": 38, "espada_madera": 24}
+const ARMOR_REDUCTION := {"armadura_diamante": 10, "armadura_dorada": 6, "armadura_piedra": 4, "armadura_madera": 2}
 const HAND_DAMAGE := 20
 const PLAYER_MAX_HP := 100
 const REGEN_EVERY := 4.0     # segundos entre ticks de regeneración de vida
@@ -61,13 +88,13 @@ const METEOR_WARN := 3.0     # segundos de aviso antes del impacto del meteoro
 const TOAST_LIFE := 4.5      # segundos visibles del toast antes de desvanecerse
 const FOGATA_RANGE := 256.0  # radio del aura de la fogata (8 tiles) — Fase 7
 
-# Fase 6 — ciclo día/noche JUGABLE (ROADMAP.md): el servidor es el reloj
-const DAY_SECONDS := 180.0   # duración del día
-const NIGHT_SECONDS := 90.0  # duración de la noche
-const DUSK_WARN := 30.0      # aviso de atardecer
-const SURVIVAL_NIGHTS := 7   # objetivo del modo supervivencia
-
-# Fase 9 — estructura de run: recompensa por noche y bono de victoria
+# Ciclo día/noche y estructura de run: los NÚMEROS por modo viven en
+# game_modes.gd (capa de reglas, ver ARQUITECTURA.md) — aquí quedan
+# como espejo de los modos clásicos (sandbox/survival) para los tests.
+const DAY_SECONDS := 180.0   # duración del día (modos clásicos)
+const NIGHT_SECONDS := 90.0  # duración de la noche (modos clásicos)
+const DUSK_WARN := 30.0      # aviso de atardecer (UI, igual en todos los modos)
+const SURVIVAL_NIGHTS := 7   # objetivo del modo supervivencia clásico
 const NIGHT_REWARD_BASE := 10  # Núcleos al amanecer por sobrevivir una noche
 const NIGHT_REWARD_STEP := 5   # + esto por cada número de noche (escala el riesgo)
 const VICTORY_BONUS := 100     # Núcleos extra al completar el modo supervivencia
@@ -87,26 +114,112 @@ const BOSS_HINTS := {
 # MONETIZACIÓN — catálogo de skins (solo cosmético, nunca pay-to-win).
 # El SERVIDOR valida compra/equipamiento (§16); el cliente solo pide.
 # "default" usa el color por jugador de siempre. "anim" = color animado.
+# Rediseño 2026-06-13: cada skin es un ATUENDO completo (camisa + pantalón +
+# pelo + borde) y un ACCESORIO de identidad (corona/cuernos/capucha/...), no
+# solo un color de camisa. `camisa` es el color del swatch en la tienda; en la
+# skin "default" el jugador usa su color por-peer para la camisa. `accent`
+# tiñe el accesorio. Sigue siendo 100% cosmético (nunca pay-to-win).
 const SKINS := {
-	"default": {"nombre": "Clásica", "precio": 0,
-		"cuerpo": Color.WHITE, "borde": Color.BLACK, "anim": false},
-	"esmeralda": {"nombre": "Esmeralda", "precio": 25,
-		"cuerpo": Color(0.13, 0.68, 0.35), "borde": Color(0.04, 0.28, 0.13), "anim": false},
-	"rubi": {"nombre": "Rubí", "precio": 25,
-		"cuerpo": Color(0.85, 0.18, 0.24), "borde": Color(0.35, 0.04, 0.07), "anim": false},
-	"zafiro": {"nombre": "Zafiro", "precio": 25,
-		"cuerpo": Color(0.20, 0.40, 0.90), "borde": Color(0.06, 0.12, 0.38), "anim": false},
-	"dorado": {"nombre": "Dorado", "precio": 60,
-		"cuerpo": Color(0.95, 0.78, 0.20), "borde": Color(0.55, 0.42, 0.05), "anim": false},
-	"sombra": {"nombre": "Sombra", "precio": 80,
-		"cuerpo": Color(0.13, 0.11, 0.18), "borde": Color(0.55, 0.25, 0.85), "anim": false},
-	"neon": {"nombre": "Neón", "precio": 80,
-		"cuerpo": Color(0.05, 0.93, 0.85), "borde": Color.WHITE, "anim": false},
-	"arcoiris": {"nombre": "Arcoíris", "precio": 150,
-		"cuerpo": Color.WHITE, "borde": Color.WHITE, "anim": true},
+	"default": {"nombre": "Clásica", "precio": 0, "anim": false,
+		"camisa": Color.WHITE, "pantalon": Color("3a4a6b"), "pelo": Color("4a3220"),
+		"borde": Color.BLACK, "accesorio": "", "accent": Color.WHITE},
+	"esmeralda": {"nombre": "Esmeralda", "precio": 25, "anim": false,
+		"camisa": Color("20ad58"), "pantalon": Color("155f33"), "pelo": Color("3a2a18"),
+		"borde": Color("04280d"), "accesorio": "diadema", "accent": Color("8af0b0")},
+	"rubi": {"nombre": "Rubí", "precio": 25, "anim": false,
+		"camisa": Color("d92e3d"), "pantalon": Color("7a1520"), "pelo": Color("3a2218"),
+		"borde": Color("350407"), "accesorio": "diadema", "accent": Color("ffb0b8")},
+	"zafiro": {"nombre": "Zafiro", "precio": 25, "anim": false,
+		"camisa": Color("3366e6"), "pantalon": Color("1c2f7a"), "pelo": Color("2a2a3a"),
+		"borde": Color("0a1f6a"), "accesorio": "diadema", "accent": Color("a8c8ff")},
+	"dorado": {"nombre": "Dorado", "precio": 60, "anim": false,
+		"camisa": Color("f2c733"), "pantalon": Color("8a6a12"), "pelo": Color("5a4a10"),
+		"borde": Color("5a4205"), "accesorio": "corona", "accent": Color("ffe070")},
+	"sombra": {"nombre": "Sombra", "precio": 80, "anim": false,
+		"camisa": Color("221d2e"), "pantalon": Color("15111f"), "pelo": Color("15111f"),
+		"borde": Color("8c40d9"), "accesorio": "capucha", "accent": Color("1a1626")},
+	"neon": {"nombre": "Neón", "precio": 80, "anim": false,
+		"camisa": Color("0cedd9"), "pantalon": Color("086e7a"), "pelo": Color("0a3a3a"),
+		"borde": Color.WHITE, "accesorio": "visor", "accent": Color("eafcff")},
+	"arcoiris": {"nombre": "Arcoíris", "precio": 150, "anim": true,
+		"camisa": Color.WHITE, "pantalon": Color("888a90"), "pelo": Color("aa90c0"),
+		"borde": Color.WHITE, "accesorio": "halo", "accent": Color.WHITE},
+	# Skins temáticas del bestiario (solo cosméticas)
+	"topo": {"nombre": "Topo", "precio": 40, "anim": false,
+		"camisa": Color("6b4a3a"), "pantalon": Color("4a3226"), "pelo": Color("2a1c14"),
+		"borde": Color("e8e0d0"), "accesorio": "casco", "accent": Color("f0c84a")},
+	"nocturna": {"nombre": "Nocturna", "precio": 40, "anim": false,
+		"camisa": Color("6b5c8e"), "pantalon": Color("2c2440"), "pelo": Color("2c2440"),
+		"borde": Color("15111f"), "accesorio": "orejas", "accent": Color("4a3d66")},
+	"acero": {"nombre": "Acero", "precio": 40, "anim": false,
+		"camisa": Color("8a909c"), "pantalon": Color("5a606c"), "pelo": Color("3a3a45"),
+		"borde": Color("f0c84a"), "accesorio": "casco", "accent": Color("c0c6d2")},
+	"demonio": {"nombre": "Demonio", "precio": 120, "anim": false,
+		"camisa": Color("d6453f"), "pantalon": Color("7a1f1c"), "pelo": Color("2a0f0c"),
+		"borde": Color("15040c"), "accesorio": "cuernos", "accent": Color("2a1a1a")},
 }
 # Núcleos por matar slimes: ver npc_manager.KINDS (varía por variante)
 const COIN_ORE := 2          # Núcleos por minar un tile de mineral
+
+# Bloque 3 "Mundo vivo II" — EXPLORACIÓN: cofres de recursos. El botín
+# depende del bioma del cofre (_zone_at de su posición): cada material
+# tiene un rango [min, max] de cuántos suelta. Además unos Núcleos.
+const CHEST_LOOT := {
+	"cielo": {"pluma": [2, 5], "esencia": [1, 3], "wood": [3, 6]},
+	"superficie": {"wood": [4, 8], "stone": [4, 8], "ore": [2, 4]},
+	"cueva": {"stone": [4, 8], "ore": [3, 6], "cristal": [1, 3]},
+	"profundo": {"diamante": [1, 3], "ascua": [2, 4], "cristal": [2, 4]},
+}
+const CHEST_COINS := [3, 8]
+
+# Bloque 3 — CALAVERAS estilo Halo: 5 variantes ocultas (todas se ven
+# igual hasta excavarlas). Unas ayudan al jugador, otras a los enemigos;
+# el efecto se elige al azar al romperla. `efecto` lo aplica excavate_skull.
+const SKULL_HEAL := 60         # curación de la calavera vital
+const SKULLS := [
+	{"nombre": "💎 Calavera del Tesoro", "buena": true, "efecto": "monedas",
+		"aviso": "💎 ¡Calavera del Tesoro! Una lluvia de Núcleos."},
+	{"nombre": "💚 Calavera Vital", "buena": true, "efecto": "cura",
+		"aviso": "💚 ¡Calavera Vital! Tus heridas se cierran."},
+	{"nombre": "📦 Calavera del Botín", "buena": true, "efecto": "botin",
+		"aviso": "📦 ¡Calavera del Botín! Materiales caen en tus manos."},
+	{"nombre": "😡 Calavera de la Furia", "buena": false, "efecto": "horda",
+		"aviso": "😡 ¡Calavera de la Furia! Algo se acerca corriendo..."},
+	{"nombre": "👹 Calavera Maldita", "buena": false, "efecto": "bestia",
+		"aviso": "👹 ¡Calavera Maldita! Una bestia despierta a tu lado."},
+]
+
+# Bloque 1 "Mundo vivo" — PRESIÓN AMBIENTAL (anti-turtling): vivir en cielo/
+# cueva/profundo sin una fortificación propia cerca acaba atrayendo enemigos.
+# "superficie" no genera presión (ya cubierta por las oleadas nocturnas).
+# La superficie generada llega hasta SKY_ROWS+8 (generate(): (noise+1)*4),
+# así que la banda debe superar esa amplitud o un valle contaría como cueva.
+const UNDERGROUND_BAND := 10    # filas bajo SKY_ROWS que aún cuentan como "superficie"
+const FORT_TILES := {WorldScript.T_WALL: true, WorldScript.T_CAMPFIRE: true,
+	WorldScript.T_SPIKES: true, WorldScript.T_TOWER: true, WorldScript.T_TOWER_MEGA: true}
+const FORT_RADIUS := 6          # tiles de radio donde se cuentan bloques de fuerte
+const FORT_MIN_BLOCKS := 4      # bloques de fuerte mínimos para no generar presión
+const PRESSURE_CHECK_EVERY := 2.0   # segundos entre comprobaciones de presión
+const ZONE_PRESSURE_TIME := 80.0    # segundos sin fuerte antes de la primera presión
+const PRESSURE_WARN_TIME := 60.0    # aviso ⚠️ previo (telegraph: legibilidad = juego justo)
+const PRESSURE_MAX_SPAWNS := 3      # tope de enemigos por presión aunque siga reincidiendo
+const BOSS_ANNOUNCE_LIFE := 8.0     # segundos visibles del banner de jefe
+
+# Bloque 2 "Progresión elemental" — JEFES ADAPTATIVOS: si el jefe activo no
+# puede amenazar bien la zona donde se queda el jugador (p.ej. "jefe_topo"
+# no alcanza una isla del cielo, "jefe_murcielago" no sigue bajo tierra, o
+# cualquier jefe lento deja que el jugador campee en superficie), tras
+# BOSS_EVOLVE_TIME el jefe MUTA a la variante de esa zona (npc_mgr.evolve_boss
+# conserva posición/vida proporcional). "cueva" y "profundo" comparten
+# destino (jefe_topo: excava en ambos); "superficie" evoluciona a
+# jefe_corredor (amenaza rápida en terreno abierto).
+const ZONE_BOSS_KIND := {
+	"cielo": "jefe_murcielago",
+	"cueva": "jefe_topo",
+	"profundo": "jefe_topo",
+	"superficie": "jefe_corredor",
+}
+const BOSS_EVOLVE_TIME := 30.0      # segundos en zona "equivocada" antes de mutar al jefe
 
 var world: Node2D = null
 var npc_mgr: Node2D = null           # NPCs (npc_manager.gd) — Fase 8: lo usa tower_manager
@@ -131,15 +244,21 @@ var _my_skin := "default"
 var _profile_init := false          # evita sonidos en la primera sincronización
 var _stream_t := 0.0
 var _save_t := 0.0
+var _player_sync_accum := 0.0       # SOLO servidor: cadencia de sync_players (GDD §10.2, 20 Hz)
 var _meteor_t := 90.0
 var _meteor_x := -1                 # x anunciada del meteoro (-1 = ninguno pendiente)
 var _meteor_warn_t := 0.0
 var _regen_t := 0.0
 var _toast_life := 0.0
+var _pressure_t := 0.0               # Bloque 1 "Mundo vivo": cadencia de _update_zone_pressure
+var _zone_pressure: Dictionary = {}  # peer_id -> {"zone": String, "t": float} (SOLO servidor)
+var _boss_announce_life := 0.0       # banner dedicado de anuncio de jefe
+var _boss_evolve: Dictionary = {}    # npc_id -> segundos acumulados en zona "equivocada" (SOLO servidor)
 
 # Ciclo día/noche (Fase 6) — el SERVIDOR lleva el reloj; los clientes
 # reciben cada cambio de fase y solo cuentan hacia atrás para el HUD.
-var game_mode := "sandbox"          # "sandbox" | "survival" (lo fija el host)
+var game_mode := "sandbox"          # id del modo activo (claves de GameModes.MODES)
+var mode_cfg: Dictionary = GameModesScript.get_mode("sandbox")  # reglas del modo activo
 var is_night := false
 var night_number := 0               # noches iniciadas (0 = aún no anochece)
 var _phase_t := DAY_SECONDS         # tiempo restante de la fase actual
@@ -164,6 +283,8 @@ var _hp_label: Label = null
 var _tool_label: Label = null
 var _armor_label: Label = null
 var _hud_box: Control = null
+var _slots_box: Control = null      # barra de items plegable (fila de slots)
+var _items_toggle: Button = null    # botón ▶/◀ que pliega la barra
 var _craft_btn: Control = null
 var _craft_panel: Control = null
 var _craft_rows: Dictionary = {}    # recipe_id -> {label, button}
@@ -177,9 +298,20 @@ var _run_body: Label = null
 var _boss_panel: Control = null     # barra de vida del jefe en el HUD (Fase 9)
 var _boss_bar: ProgressBar = null
 var _boss_label: Label = null       # nombre del jefe vivo (Fase 10: roster variable)
+var _boss_announce_panel: Control = null   # banner dedicado del jefe de la run (Bloque 1)
+var _boss_announce_label: Label = null
+
+# --- Ajustes de control móvil/PC (local, per-device) ---
+var control_mode := "auto"          # "auto"/"movil"/"pc" (ver SETTINGS_PATH)
+var _joystick: Control = null       # joystick virtual (ui_builder lo crea en el HUD)
+var _settings_btn: Control = null
+var _settings_panel: Control = null
+var _settings_hint: Label = null
+var _control_buttons: Dictionary = {}   # "auto"/"movil"/"pc" -> Button
 
 
 func _ready() -> void:
+	_load_settings()
 	_build_ui()
 	Net.player_connected.connect(_on_player_connected)
 	Net.player_disconnected.connect(_on_player_disconnected)
@@ -214,6 +346,14 @@ func _process(delta: float) -> void:
 			_toast_panel.hide()
 		elif _toast_life < 0.8:
 			_toast_panel.modulate.a = _toast_life / 0.8
+
+	# Desvanecido del banner de jefe (Bloque 1 "Mundo vivo")
+	if _boss_announce_life > 0.0 and not _menu.visible:
+		_boss_announce_life -= delta
+		if _boss_announce_life <= 0.0:
+			_boss_announce_panel.hide()
+		elif _boss_announce_life < 1.2:
+			_boss_announce_panel.modulate.a = _boss_announce_life / 1.2
 
 	if world == null:
 		return
@@ -254,6 +394,13 @@ func _process(delta: float) -> void:
 			world.update_streaming(me.position)
 
 	if multiplayer.multiplayer_peer != null and multiplayer.is_server():
+		# Movimiento server-authoritative (GDD §10.2): difunde la posición
+		# real de todos los jugadores a 20 Hz (mismo patrón que sync_npcs).
+		_player_sync_accum += delta
+		if _player_sync_accum >= 0.05:
+			_player_sync_accum = 0.0
+			_broadcast_player_snapshot()
+
 		_save_t += delta
 		if _save_t >= 60.0:
 			_save_t = 0.0
@@ -265,6 +412,15 @@ func _process(delta: float) -> void:
 			_regen_t = 0.0
 			_regen_tick()
 
+		# Presión ambiental (Bloque 1 "Mundo vivo"): castiga quedarse en
+		# cielo/cueva/profundo sin una fortificación propia cerca.
+		_pressure_t += delta
+		if _pressure_t >= PRESSURE_CHECK_EVERY:
+			_pressure_t = 0.0
+			for pid: int in players:
+				_update_zone_pressure(pid)
+			_update_boss_evolution()
+
 		# Reloj de partida (Fase 6): el día/noche gobierna el gameplay.
 		# Al anochecer _set_phase dispara la oleada (ya no hay invasiones
 		# con timer aleatorio: las oleadas SON la noche).
@@ -275,8 +431,8 @@ func _process(delta: float) -> void:
 		if _phase_t <= 0.0:
 			_set_phase(not is_night)
 
-		# Meteoro (GDD §9): evento DIURNO con aviso previo
-		if not is_night:
+		# Meteoro (GDD §9): evento DIURNO con aviso previo (si el modo lo permite)
+		if not is_night and bool(mode_cfg.get("meteors", true)):
 			_meteor_t -= delta
 			if _meteor_t <= 0.0 and _meteor_x < 0:
 				_meteor_t = randf_range(70.0, 120.0)
@@ -304,9 +460,16 @@ func _notification(what: int) -> void:
 # -------------------------------------------------------------
 # LOBBY
 # -------------------------------------------------------------
+## Fija el modo activo y carga sus reglas (capa de reglas, game_modes.gd).
+## Único punto donde game_mode/mode_cfg cambian: host, apply_phase y reset.
+func set_mode(id: String) -> void:
+	game_mode = id
+	mode_cfg = GameModesScript.get_mode(id)
+
+
 func _host(load_save: bool, mode: String = "sandbox") -> void:
 	my_name = _read_name()
-	game_mode = mode
+	set_mode(mode)
 	_run_over = false
 	run_kills = 0
 	run_boss_kind = BOSS_KINDS.pick_random()
@@ -324,7 +487,7 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	_apply_inventory(inventories[1])
 	_apply_profile(prof)
 	_show_toast("🟢 Partida creada — comparte tu IP: %s" % Net.local_ip())
-	_broadcast_toast(_boss_announcement())
+	_broadcast_boss_announcement(run_boss_kind)
 
 
 func _on_join_pressed() -> void:
@@ -400,7 +563,7 @@ func request_join(nombre: String) -> void:
 	_spawn_player(new_id, spawn, str(prof.skin), nombre)
 	_push_profile(new_id)
 	apply_phase.rpc_id(new_id, is_night, night_number, _phase_t, game_mode, run_boss_kind)
-	_toast_to(new_id, _boss_announcement())
+	show_boss_announcement.rpc_id(new_id, run_boss_kind)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -421,6 +584,54 @@ func _spawn_player(id: int, pos: Vector2, skin: String = "default", nombre: Stri
 	p.set_multiplayer_authority(id)
 	add_child(p)
 	players[id] = p
+
+
+# -------------------------------------------------------------
+# MOVIMIENTO SERVER-AUTHORITATIVE (GDD §10.2)
+# El servidor simula la física de TODOS los jugadores (cada Player._process
+# corre _process_remote_authority para los nodos que no son su autoridad) y
+# difunde aquí la posición real. Los clientes reconcilian su propio nodo
+# (player._reconcile) y actualizan _target_pos/_target_vel de los remotos.
+# -------------------------------------------------------------
+## Snapshot autoritativo de posiciones, 20 Hz — mismo patrón que
+## npc_manager.sync_npcs. peer_id -> [pos, vel, on_floor]. El servidor
+## NO se lo aplica a sí mismo: sus nodos son la autoridad (Casos A y B
+## de player._process) y nunca leen _target_pos.
+func _broadcast_player_snapshot() -> void:
+	if multiplayer.get_peers().is_empty():
+		return   # en solitario no hay a quién difundir
+	var snap := {}
+	for pid: int in players:
+		var p: Node2D = players[pid]
+		snap[pid] = [p.position, p.velocity, p.on_floor]
+	sync_players.rpc(snap)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func sync_players(snap: Dictionary) -> void:
+	_apply_player_snapshot(snap)
+
+
+## SOLO clientes (les llega por sync_players): reconcilia mi propio nodo
+## contra la posición real del servidor y actualiza el objetivo de lerp
+## de los nodos remotos.
+func _apply_player_snapshot(snap: Dictionary) -> void:
+	var my_id := multiplayer.get_unique_id()
+	for pid: int in snap:
+		if not players.has(pid):
+			continue
+		var p: Node2D = players[pid]
+		var s: Array = snap[pid]
+		var pos: Vector2 = s[0]
+		var vel: Vector2 = s[1]
+		var floor_flag: bool = s[2]
+		if pid == my_id:
+			if not multiplayer.is_server():
+				p._reconcile(pos, vel, floor_flag)
+			# si soy servidor, mi propio nodo YA es la autoridad: no-op
+		else:
+			p._target_pos = pos
+			p._target_vel = vel
 
 
 # -------------------------------------------------------------
@@ -524,6 +735,25 @@ func request_craft(recipe_id: String) -> void:
 	_do_craft(recipe_id, multiplayer.get_remote_sender_id())
 
 
+# Devuelve la cadena de mejora (TIER_CHAINS) a la que pertenece recipe_id,
+# o [] si es un bloque apilable sin progresión por niveles.
+func _tier_chain_of(recipe_id: String) -> Array:
+	for fam: String in TIER_CHAINS:
+		if recipe_id in TIER_CHAINS[fam]:
+			return TIER_CHAINS[fam]
+	return []
+
+
+# Siguiente mejora disponible de una cadena: el primer tier por encima
+# del más alto que ya tenga el jugador (o el último, si está al máximo).
+func _next_tier(chain: Array, inv: Dictionary) -> String:
+	var highest := -1
+	for i in chain.size():
+		if int(inv.get(chain[i], 0)) > 0:
+			highest = i
+	return chain[mini(highest + 1, chain.size() - 1)]
+
+
 func _do_craft(recipe_id: String, peer_id: int) -> void:
 	if not RECIPES.has(recipe_id):
 		return
@@ -533,6 +763,13 @@ func _do_craft(recipe_id: String, peer_id: int) -> void:
 	if is_unique and int(inv.get(recipe_id, 0)) > 0:
 		_toast_to(peer_id, "Ya tienes: %s" % RECIPES[recipe_id].nombre)
 		return
+	# Mejora por niveles: para el tier N+1 hace falta tener ya el tier N
+	var chain := _tier_chain_of(recipe_id)
+	if not chain.is_empty():
+		var idx := chain.find(recipe_id)
+		if idx > 0 and int(inv.get(chain[idx - 1], 0)) <= 0:
+			_toast_to(peer_id, "Primero fabrica: %s" % RECIPES[chain[idx - 1]].nombre)
+			return
 	var costo: Dictionary = RECIPES[recipe_id].costo
 	for item: String in costo:
 		if int(inv.get(item, 0)) < int(costo[item]):
@@ -589,6 +826,104 @@ func on_nest_destroyed(coord: Vector2i) -> void:
 		npc_mgr.forget_nest(coord)
 
 
+# -------------------------------------------------------------
+# BLOQUE 3 "MUNDO VIVO II" — EXPLORACIÓN (server-authoritative; lo
+# llaman las ramas T_CHEST/T_SKULL de world._do_hit al minar el tile).
+# -------------------------------------------------------------
+## Cofre de recursos: reparte botín según el bioma de su posición
+## (CHEST_LOOT) + unos Núcleos, y avisa solo al jugador que lo abrió.
+func open_chest(miner_id: int, coord: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var pos := Vector2(coord.x * world.TILE, coord.y * world.TILE)
+	var zone := _zone_at(pos)
+	var loot: Dictionary = CHEST_LOOT.get(zone, CHEST_LOOT["superficie"])
+	var resumen: Array[String] = []
+	for item: String in loot:
+		var rango: Array = loot[item]
+		var n := randi_range(int(rango[0]), int(rango[1]))
+		for _i in n:
+			add_item(miner_id, item)
+		if n > 0:
+			resumen.append("%d %s" % [n, ITEM_NAMES.get(item, item)])
+	add_coins(miner_id, randi_range(CHEST_COINS[0], CHEST_COINS[1]))
+	_toast_to(miner_id, "📦 Cofre: %s" % ", ".join(resumen))
+	# Bloque 5: estallido dorado en TODOS los peers al abrirse el cofre
+	_broadcast_event_fx(_cell_center(coord), Color("f0c84a"), true)
+
+
+## Calavera (estilo Halo): elige una de las 5 variantes al azar y aplica
+## su efecto. Unas favorecen al jugador, otras a los enemigos — no se sabe
+## hasta excavarla. El aviso va a TODOS (su suerte cambia la partida).
+func excavate_skull(miner_id: int, coord: Vector2i) -> void:
+	if not multiplayer.is_server():
+		return
+	var skull: Dictionary = SKULLS.pick_random()
+	var p: Node2D = players.get(miner_id)
+	match str(skull.efecto):
+		"monedas":
+			add_coins(miner_id, COIN_NEST * 3)
+		"cura":
+			heal_player(miner_id, SKULL_HEAL)
+		"botin":
+			for item: String in ["wood", "stone", "ore", "cristal"]:
+				for _i in randi_range(2, 5):
+					add_item(miner_id, item)
+		"horda":
+			if p != null and npc_mgr != null:
+				for _i in 3:
+					npc_mgr.spawn_near("normal", p)
+		"bestia":
+			if p != null and npc_mgr != null:
+				npc_mgr.spawn_near("grande", p)
+	_broadcast_toast(str(skull.aviso))
+	# Bloque 5: estallido verde (buena) o rojo (mala) en TODOS los peers
+	var col := Color("4ae07a") if bool(skull.buena) else Color("e04a3a")
+	_broadcast_event_fx(_cell_center(coord), col, true)
+
+
+## Centro en píxeles de una celda del mundo (para FX).
+func _cell_center(coord: Vector2i) -> Vector2:
+	return Vector2(coord.x * world.TILE + world.TILE * 0.5, coord.y * world.TILE + world.TILE * 0.5)
+
+
+# -------------------------------------------------------------
+# BLOQUE 5 "IDENTIDAD VISUAL Y SONORA": FX cosmético de evento difundido
+# a todos los peers (cofre/calavera). 100% visual y local en cada cliente
+# (usa world.fx): nunca toca estado del juego (GDD §16).
+# -------------------------------------------------------------
+func _broadcast_event_fx(pos: Vector2, color: Color, ring: bool) -> void:
+	event_fx.rpc(pos, color, ring)
+	_event_fx(pos, color, ring)
+
+
+@rpc("authority", "call_remote", "unreliable")
+func event_fx(pos: Vector2, color: Color, ring: bool) -> void:
+	_event_fx(pos, color, ring)
+
+
+func _event_fx(pos: Vector2, color: Color, ring: bool) -> void:
+	if world == null or world.fx == null:
+		return
+	world.fx.burst(pos, color, 18, 200.0)
+	if ring:
+		world.fx.ring(pos, 70.0, color)
+
+
+## Cura a un jugador (Bloque 3): sube su vida hasta PLAYER_MAX_HP y la
+## sincroniza (mismo patrón push que damage_player / la regeneración).
+func heal_player(peer_id: int, amount: int) -> void:
+	if not multiplayer.is_server() or not players.has(peer_id):
+		return
+	var hp: int = mini(player_hp.get(peer_id, PLAYER_MAX_HP) + amount, PLAYER_MAX_HP)
+	player_hp[peer_id] = hp
+	if peer_id == 1:
+		if not dedicated:
+			_set_hp(hp)
+	else:
+		update_health.rpc_id(peer_id, hp)
+
+
 ## Estadística de bajas de la run (Fase 9, pulido) — la llaman las dos
 ## rutas de muerte de npc_manager (golpe del jugador y daño ambiental).
 ## SOLO servidor. Derrotar a CUALQUIER jefe (Fase 10: roster variable)
@@ -604,11 +939,59 @@ func count_kill(kind: String) -> void:
 
 ## Texto del aviso de jefe de la run (Fase 10): nombre + táctica para
 ## que el jugador empiece a planear su defensa desde el minuto cero.
-func _boss_announcement() -> String:
-	var info: Dictionary = npc_mgr.KINDS.get(run_boss_kind, {})
+func _boss_announcement(kind: String = run_boss_kind) -> String:
+	var info: Dictionary = npc_mgr.KINDS.get(kind, {})
 	var nombre := str(info.get("nombre", "Jefe"))
-	var hint := str(BOSS_HINTS.get(run_boss_kind, ""))
+	var hint := str(BOSS_HINTS.get(kind, ""))
 	return "👹 Jefe de esta run: %s — %s" % [nombre, hint]
+
+
+## Banner dedicado (Bloque 1 "Mundo vivo"): más vistoso y duradero que
+## el toast genérico, no compite con "Partida creada" ni avisos posteriores.
+@rpc("authority", "call_remote", "reliable")
+func show_boss_announcement(kind: String) -> void:
+	_show_boss_announcement(kind)
+
+
+func _show_boss_announcement(kind: String) -> void:
+	_boss_announce_label.text = _boss_announcement(kind)
+	_boss_announce_panel.show()
+	_boss_announce_panel.modulate.a = 1.0
+	_boss_announce_life = BOSS_ANNOUNCE_LIFE
+	Sfx.play("jefe")
+
+
+func _broadcast_boss_announcement(kind: String) -> void:
+	show_boss_announcement.rpc(kind)
+	_show_boss_announcement(kind)
+
+
+## Texto del banner de evolución de jefe (Bloque 2 "Progresión elemental"):
+## reutiliza el mismo banner que el anuncio inicial para que la mutación del
+## jefe (npc_mgr.evolve_boss) no pase desapercibida en el ruido de toasts.
+func _boss_evolution_text(new_kind: String) -> String:
+	var info: Dictionary = npc_mgr.KINDS.get(new_kind, {})
+	var nombre := str(info.get("nombre", "Jefe"))
+	var hint := str(BOSS_HINTS.get(new_kind, ""))
+	return "🔥 ¡El jefe ha evolucionado! Ahora es: %s — %s" % [nombre, hint]
+
+
+@rpc("authority", "call_remote", "reliable")
+func show_boss_evolution(new_kind: String) -> void:
+	_show_boss_evolution(new_kind)
+
+
+func _show_boss_evolution(new_kind: String) -> void:
+	_boss_announce_label.text = _boss_evolution_text(new_kind)
+	_boss_announce_panel.show()
+	_boss_announce_panel.modulate.a = 1.0
+	_boss_announce_life = BOSS_ANNOUNCE_LIFE
+	Sfx.play("jefe")
+
+
+func _broadcast_boss_evolution(new_kind: String) -> void:
+	show_boss_evolution.rpc(new_kind)
+	_show_boss_evolution(new_kind)
 
 
 func try_buy_skin(skin_id: String) -> void:
@@ -721,8 +1104,8 @@ func damage_player(peer_id: int, dmg: int) -> void:
 	dmg = maxi(1, dmg - get_armor_reduction(peer_id))   # la armadura amortigua
 	var hp: int = player_hp.get(peer_id, PLAYER_MAX_HP) - dmg
 	if hp <= 0:
-		if game_mode == "survival":
-			# Fase 9: morir en supervivencia termina la run (sin respawn).
+		if bool(mode_cfg.death_ends_run):
+			# Fase 9: morir en un modo con run termina la run (sin respawn).
 			hp = 0
 			player_hp[peer_id] = hp
 			if peer_id == 1:
@@ -744,6 +1127,8 @@ func damage_player(peer_id: int, dmg: int) -> void:
 			players[1].position = pos
 			players[1].velocity = Vector2.ZERO
 		else:
+			players[peer_id].position = pos
+			players[peer_id].velocity = Vector2.ZERO
 			respawn_player.rpc_id(peer_id, pos)
 		_toast_to(peer_id, "💀 ¡Caíste! Reapareciendo...")
 	player_hp[peer_id] = hp
@@ -765,6 +1150,8 @@ func respawn_player(pos: Vector2) -> void:
 	if me != null:
 		me.position = pos
 		me.velocity = Vector2.ZERO
+		me._target_pos = pos
+		me._target_vel = Vector2.ZERO
 
 
 func _set_hp(hp: int) -> void:
@@ -808,13 +1195,123 @@ func _near_campfire(pos: Vector2) -> bool:
 
 
 # -------------------------------------------------------------
+# PRESIÓN AMBIENTAL (Bloque 1 "Mundo vivo", anti-turtling): vivir en
+# cielo/cueva/profundo sin un fuerte propio cerca atrae enemigos —
+# "superficie" no genera presión (ya cubierta por las oleadas nocturnas).
+# -------------------------------------------------------------
+func _zone_at(pos: Vector2) -> String:
+	var y := floori(pos.y / world.TILE)
+	if y < world.SKY_ROWS:
+		return "cielo"
+	if y >= world.H - 1 - world.DEEP_ROWS:
+		return "profundo"
+	if y >= world.SKY_ROWS + UNDERGROUND_BAND:
+		return "cueva"
+	return "superficie"
+
+
+## Bloques de FORT_TILES propios del jugador en un radio de FORT_RADIUS.
+func _has_fort(pos: Vector2) -> bool:
+	var cx := floori(pos.x / world.TILE)
+	var cy := floori(pos.y / world.TILE)
+	var n := 0
+	for dx in range(-FORT_RADIUS, FORT_RADIUS + 1):
+		for dy in range(-FORT_RADIUS, FORT_RADIUS + 1):
+			if FORT_TILES.has(world.tiles.get(Vector2i(cx + dx, cy + dy), 0)):
+				n += 1
+				if n >= FORT_MIN_BLOCKS:
+					return true
+	return false
+
+
+## Cada PRESSURE_CHECK_EVERY segundos: si el jugador lleva ZONE_PRESSURE_TIME
+## seguidos en cielo/cueva/profundo sin fuerte cerca, dispara una presión.
+## Telegraph: a los PRESSURE_WARN_TIME llega un aviso ⚠️ para poder reaccionar
+## (fortificar o subir). Reincidir sin salir de la zona ESCALA la presión:
+## cada disparo trae un enemigo más (hasta PRESSURE_MAX_SPAWNS).
+func _update_zone_pressure(pid: int) -> void:
+	var p: Node2D = players[pid]
+	var zone := _zone_at(p.position)
+	var st: Dictionary = _zone_pressure.get(pid, {"zone": "", "t": 0.0, "warned": false, "level": 0})
+	if zone != st.zone:
+		st = {"zone": zone, "t": 0.0, "warned": false, "level": 0}
+	if zone == "superficie" or _has_fort(p.position):
+		st.t = 0.0
+		st.warned = false
+		st.level = 0   # hacer lo correcto perdona la reincidencia
+	else:
+		st.t += PRESSURE_CHECK_EVERY
+		if not st.warned and st.t >= PRESSURE_WARN_TIME:
+			st.warned = true
+			_toast_to(pid, "⚠️ Algo te acecha... fortifica o vuelve a la superficie")
+		if st.t >= ZONE_PRESSURE_TIME:
+			st.t = 0.0
+			st.warned = false
+			st.level = int(st.level) + 1
+			_trigger_zone_pressure(pid, zone, p, mini(int(st.level), PRESSURE_MAX_SPAWNS))
+	_zone_pressure[pid] = st
+
+
+## Aviso + enemigos cercanos según la zona (resuelve también el bug de
+## islas aéreas sin enemigos: spawn_near coloca el volador junto al jugador).
+func _trigger_zone_pressure(pid: int, zone: String, p: Node2D, count: int = 1) -> void:
+	var kind := ""
+	match zone:
+		"cielo":
+			_toast_to(pid, "🌬️ Algo te ha seguido hasta las alturas...")
+			kind = "murcielago"
+		"cueva":
+			_toast_to(pid, "🦇 No conviene quedarse tanto en la oscuridad...")
+			kind = "topo"
+		"profundo":
+			_toast_to(pid, "🔥 El calor del núcleo despierta algo cerca...")
+			kind = "taladro"
+	if kind.is_empty():
+		return
+	for i in count:
+		npc_mgr.spawn_near(kind, p)
+
+
+## Bloque 2 "Progresión elemental" — JEFES ADAPTATIVOS (rediseño: evolución
+## INTELIGENTE, no aleatoria): por cada jefe vivo, mira la zona del jugador
+## más cercano. Si el jefe activo no es la variante capaz de alcanzar esa zona
+## (`ZONE_BOSS_KIND`: cielo→murciélago volador, cueva/profundo→topo excavador,
+## superficie→corredor veloz), acumula tiempo y al llegar a BOSS_EVOLVE_TIME
+## muta EXACTAMENTE a esa variante — el jefe persigue al jugador a donde vaya.
+## Si la zona cambia o ya es la variante ideal, el contador se resetea.
+func _update_boss_evolution() -> void:
+	for id: int in npc_mgr.npcs:
+		var n: Dictionary = npc_mgr.npcs[id]
+		var kind := str(n.get("kind", ""))
+		if not bool(npc_mgr.KINDS.get(kind, {}).get("boss", false)):
+			continue
+		var pid: int = npc_mgr._nearest_player(n.pos)
+		if pid == -1:
+			_boss_evolve.erase(id)
+			continue
+		var zone := _zone_at(players[pid].position)
+		var ideal := str(ZONE_BOSS_KIND.get(zone, ""))
+		if ideal.is_empty() or ideal == kind:
+			_boss_evolve.erase(id)
+			continue
+		var t: float = float(_boss_evolve.get(id, 0.0)) + PRESSURE_CHECK_EVERY
+		if t >= BOSS_EVOLVE_TIME:
+			# Muta a la variante que SÍ puede alcanzar al jugador en su zona
+			_boss_evolve.erase(id)
+			npc_mgr.evolve_boss(id, ideal)
+			_broadcast_boss_evolution(ideal)
+		else:
+			_boss_evolve[id] = t
+
+
+# -------------------------------------------------------------
 # CICLO DÍA/NOCHE (Fase 6, ROADMAP.md) — SOLO el servidor cambia
 # de fase; los clientes la reciben por RPC. La luz del mundo
 # (world.daylight) y las oleadas nocturnas cuelgan de esto.
 # -------------------------------------------------------------
 func _set_phase(night: bool) -> void:
 	is_night = night
-	_phase_t = NIGHT_SECONDS if night else DAY_SECONDS
+	_phase_t = float(mode_cfg.night_seconds) if night else float(mode_cfg.day_seconds)
 	_dusk_warned = false
 	if night:
 		night_number += 1
@@ -822,16 +1319,18 @@ func _set_phase(night: bool) -> void:
 		var npcs_node: Node2D = get_node_or_null("NPCs")
 		if npcs_node != null:
 			npcs_node.night_wave(night_number)
-			if night_number % npcs_node.BOSS_EVERY == 0:
+			if night_number % int(mode_cfg.boss_every) == 0:
 				var nombre := str(npcs_node.KINDS.get(run_boss_kind, {}).get("nombre", "Jefe"))
 				_broadcast_toast("👹 ¡%s ha llegado! (Noche %d)" % [nombre, night_number])
 	else:
 		if night_number > 0:
 			_broadcast_toast("☀️ Amaneció — sobreviviste la noche %d" % night_number)
-			var reward := NIGHT_REWARD_BASE + NIGHT_REWARD_STEP * night_number
+			var reward := int(mode_cfg.night_reward_base) + int(mode_cfg.night_reward_step) * night_number
 			for pid: int in players:
 				add_coins(pid, reward)
-		if game_mode == "survival" and night_number == SURVIVAL_NIGHTS:
+			world.grow_trees()
+		var goal := int(mode_cfg.nights_to_win)
+		if goal > 0 and night_number == goal:
 			_end_run(true)
 			return
 	apply_phase.rpc(is_night, night_number, _phase_t, game_mode, run_boss_kind)
@@ -842,21 +1341,21 @@ func apply_phase(night: bool, n: int, t_left: float, mode: String, boss_kind: St
 	is_night = night
 	night_number = n
 	_phase_t = t_left
-	game_mode = mode
+	set_mode(mode)
 	run_boss_kind = boss_kind
 
 
 ## 1.0 = pleno día, 0.0 = plena noche; amanecer/atardecer de ~12 s.
 ## world.daylight() delega aquí (la hora del sistema ya no manda).
 func daylight_factor() -> float:
-	var total: float = NIGHT_SECONDS if is_night else DAY_SECONDS
+	var total := float(mode_cfg.night_seconds) if is_night else float(mode_cfg.day_seconds)
 	var k := clampf((total - _phase_t) / 12.0, 0.0, 1.0)
 	return (1.0 - k) if is_night else k
 
 
 ## Progreso 0..1 de la fase actual (posición del sol/luna en el cielo).
 func phase_progress() -> float:
-	var total: float = NIGHT_SECONDS if is_night else DAY_SECONDS
+	var total := float(mode_cfg.night_seconds) if is_night else float(mode_cfg.day_seconds)
 	return clampf(1.0 - _phase_t / total, 0.0, 1.0)
 
 
@@ -865,8 +1364,9 @@ func _update_phase_label() -> void:
 		return
 	var mm := int(_phase_t) / 60
 	var ss := int(_phase_t) % 60
+	var goal := int(mode_cfg.nights_to_win)
 	if is_night:
-		var meta := (" de %d" % SURVIVAL_NIGHTS) if game_mode == "survival" else ""
+		var meta := (" de %d" % goal) if goal > 0 else ""
 		_phase_label.text = "🌙 Noche %d%s — %d:%02d" % [night_number, meta, mm, ss]
 	else:
 		_phase_label.text = "☀️ Día %d — %d:%02d" % [night_number + 1, mm, ss]
@@ -886,7 +1386,7 @@ func _end_run(victory: bool) -> void:
 	var kills := run_kills
 	if victory:
 		for pid: int in players:
-			add_coins(pid, VICTORY_BONUS)
+			add_coins(pid, int(mode_cfg.victory_bonus))
 	run_ended.rpc(victory, nights, kills)
 	if not dedicated:
 		_apply_run_ended(victory, nights, kills)
@@ -914,7 +1414,7 @@ func _apply_run_ended(victory: bool, nights: int, kills: int) -> void:
 	var body := "🌙 Noches sobrevividas: %d\n⚔️ Enemigos abatidos: %d\n📦 Recursos reunidos: %d\n🪙 Núcleos: %d" % [
 		nights, kills, recursos, _my_coins]
 	if victory:
-		body += "\n✨ +%d de bono por la victoria" % VICTORY_BONUS
+		body += "\n✨ +%d de bono por la victoria" % int(mode_cfg.victory_bonus)
 	_run_body.text = body
 	_run_panel.show()
 	# Celebración o lamento (solo visual y local)
@@ -933,11 +1433,13 @@ func _apply_run_ended(victory: bool, nights: int, kills: int) -> void:
 func _reset_run() -> void:
 	is_night = false
 	night_number = 0
-	_phase_t = DAY_SECONDS
+	set_mode("sandbox")
+	_phase_t = float(mode_cfg.day_seconds)
 	_dusk_warned = false
-	game_mode = "sandbox"
 	_run_over = false      # lista para una futura run sin reiniciar la app
 	run_kills = 0
+	_zone_pressure.clear()
+	_boss_evolve.clear()
 	if npc_mgr != null:
 		npc_mgr.npcs.clear()
 	if tower_mgr != null:
@@ -945,9 +1447,9 @@ func _reset_run() -> void:
 	for pid: int in players:
 		var pos: Vector2 = world.surface_spawn(randi_range(4, world.W - 5))
 		player_hp[pid] = PLAYER_MAX_HP
+		players[pid].position = pos
+		players[pid].velocity = Vector2.ZERO
 		if pid == 1:
-			players[1].position = pos
-			players[1].velocity = Vector2.ZERO
 			if not dedicated:
 				_set_hp(PLAYER_MAX_HP)
 		else:
@@ -963,8 +1465,8 @@ func _reset_run() -> void:
 # y llegarán con el backend (Fase 5).
 # -------------------------------------------------------------
 func save_game() -> void:
-	# Las runs de supervivencia NO se guardan: el save es del sandbox
-	if world == null or game_mode == "survival":
+	# Los modos con run (supervivencia/asedio) NO guardan: el save es del sandbox
+	if world == null or not bool(mode_cfg.save_allowed):
 		return
 	var tiles_s := {}
 	for c: Vector2i in world.tiles:
@@ -1041,6 +1543,20 @@ func _show_toast(text: String) -> void:
 		Sfx.play("noche")
 	elif text.begins_with("☀️"):  # amanece: campanada suave
 		Sfx.play("amanecer")
+	elif text.begins_with("🕳️"):  # un nido apareció: pulso subterráneo
+		Sfx.play("nido")
+	elif text.begins_with("⚠️"):  # aviso de presión ambiental: tono grave (Bloque 1)
+		Sfx.play("noche")
+	elif text.begins_with("🌬️") or text.begins_with("🦇") or text.begins_with("🔥"):
+		Sfx.play("invasion")       # la presión ambiental se dispara (Bloque 1)
+	elif text.begins_with("📦"):  # cofre abierto o calavera del botín (Bloque 5)
+		Sfx.play("cofre")
+	elif text.begins_with("💎"):  # calavera del tesoro: lluvia de Núcleos (Bloque 5)
+		Sfx.play("moneda")
+	elif text.begins_with("💚"):  # calavera vital: sanación (Bloque 5)
+		Sfx.play("cura")
+	elif text.begins_with("😡"):  # calavera de la furia: horda (Bloque 5)
+		Sfx.play("maldicion")
 
 
 func _on_player_connected(id: int) -> void:
@@ -1058,6 +1574,7 @@ func _on_player_disconnected(id: int) -> void:
 	inventories.erase(id)
 	player_hp.erase(id)
 	peer_names.erase(id)   # el perfil queda en profiles (persiste por nombre)
+	_zone_pressure.erase(id)
 	if dedicated:
 		print("[SERVIDOR] Jugador %d desconectado" % id)
 
@@ -1072,394 +1589,110 @@ func _on_host_lost() -> void:
 # -------------------------------------------------------------
 ## El jugador ignora toques que caen sobre la interfaz.
 func is_point_on_ui(p: Vector2) -> bool:
-	for ctrl: Control in [_hud_box, _craft_btn, _craft_panel, _shop_btn, _shop_panel, _hp_panel, _toast_panel, _run_panel]:
+	# Barra de items PLEGABLE: se mira `_slots_box` (la fila de slots) y el
+	# botón `_items_toggle`, NO el `_hud_box` entero — así, al plegar la barra,
+	# `_slots_box` se oculta y la franja inferior queda libre para minar.
+	for ctrl: Control in [_info, _slots_box, _items_toggle, _craft_btn, _craft_panel,
+			_shop_btn, _shop_panel, _hp_panel, _toast_panel, _run_panel,
+			_settings_btn, _settings_panel]:
 		if ctrl != null and ctrl.visible and ctrl.get_global_rect().has_point(p):
 			return true
 	return _menu.visible
 
 
-## Estilo común de paneles: fondo oscuro translúcido, bordes redondeados
-## y márgenes internos — legible sobre cualquier fondo del mundo.
-func _style_panel(p: PanelContainer, bg := Color(0.07, 0.08, 0.12, 0.92)) -> void:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = bg
-	sb.set_corner_radius_all(10)
-	sb.set_border_width_all(1)
-	sb.border_color = Color(1, 1, 1, 0.12)
-	sb.set_content_margin_all(14)
-	p.add_theme_stylebox_override("panel", sb)
-
-
+## La CONSTRUCCIÓN de la interfaz vive en ui_builder.gd (capa de
+## presentación, ver ARQUITECTURA.md): main solo delega y conserva
+## las referencias (_menu, _hp_bar, ...) porque es dueño del estado.
 func _build_ui() -> void:
-	_ui = CanvasLayer.new()
-	add_child(_ui)
-
-	# Toast de avisos: arriba al CENTRO (no choca con la barra de vida)
-	_toast_panel = PanelContainer.new()
-	_toast_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_toast_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_toast_panel.grow_vertical = Control.GROW_DIRECTION_END
-	_toast_panel.position += Vector2(0, 8)
-	_style_panel(_toast_panel, Color(0.05, 0.06, 0.1, 0.85))
-	_toast_panel.hide()
-	_ui.add_child(_toast_panel)
-
-	_status = Label.new()
-	_status.add_theme_font_size_override("font_size", 17)
-	_toast_panel.add_child(_status)
-
-	_menu = PanelContainer.new()
-	_menu.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_menu.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_menu.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_style_panel(_menu)
-	_ui.add_child(_menu)
-
-	var box := VBoxContainer.new()
-	box.custom_minimum_size = Vector2(440, 0)
-	box.add_theme_constant_override("separation", 14)
-	_menu.add_child(box)
-
-	var title := Label.new()
-	title.text = "⛏️ NÚCLEO DEL MUNDO"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 28)
-	box.add_child(title)
-
-	var subtitle := Label.new()
-	subtitle.text = "Fase 5 — skins, Núcleos y sonido"
-	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	subtitle.modulate = Color(1, 1, 1, 0.6)
-	box.add_child(subtitle)
-
-	# Nombre de jugador: clave del perfil (Núcleos y skins persisten por nombre)
-	_name_input = LineEdit.new()
-	_name_input.text = "Jugador"
-	_name_input.placeholder_text = "Tu nombre (guarda tus Núcleos y skins)"
-	_name_input.max_length = 16
-	_name_input.custom_minimum_size.y = 48
-	box.add_child(_name_input)
-
-	# Modos de juego (Fase 6): supervivencia por noches o sandbox libre
-	var surv_btn := Button.new()
-	surv_btn.text = "🌙 Supervivencia — %d noches (host)" % SURVIVAL_NIGHTS
-	surv_btn.custom_minimum_size.y = 56
-	surv_btn.pressed.connect(func(): _host(false, "survival"))
-	box.add_child(surv_btn)
-
-	var new_btn := Button.new()
-	new_btn.text = "🏖️ Sandbox libre (host)"
-	new_btn.custom_minimum_size.y = 56
-	new_btn.pressed.connect(func(): _host(false))
-	box.add_child(new_btn)
-
-	if FileAccess.file_exists(SAVE_PATH):
-		var cont_btn := Button.new()
-		cont_btn.text = "Continuar partida guardada"
-		cont_btn.custom_minimum_size.y = 56
-		cont_btn.pressed.connect(func(): _host(true))
-		box.add_child(cont_btn)
-
-	_ip_input = LineEdit.new()
-	_ip_input.text = "127.0.0.1"
-	_ip_input.placeholder_text = "IP del host (ej: 192.168.1.50)"
-	_ip_input.custom_minimum_size.y = 48
-	box.add_child(_ip_input)
-
-	var join_btn := Button.new()
-	join_btn.text = "Unirse a partida"
-	join_btn.custom_minimum_size.y = 56
-	join_btn.pressed.connect(_on_join_pressed)
-	box.add_child(join_btn)
+	UiBuilderScript.build_lobby(self)
 
 
 func _show_hud() -> void:
-	# Aviso de vida baja: borde rojo pulsante en todo el viewport.
-	# MOUSE_FILTER_IGNORE y fuera de is_point_on_ui: no bloquea taps.
-	var lowhp := Panel.new()
-	lowhp.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	lowhp.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var lsb := StyleBoxFlat.new()
-	lsb.draw_center = false
-	lsb.border_color = Color(0.85, 0.1, 0.1, 0.8)
-	lsb.set_border_width_all(14)
-	lowhp.add_theme_stylebox_override("panel", lsb)
-	lowhp.hide()
-	_ui.add_child(lowhp)
-	_low_hp = lowhp
+	UiBuilderScript.build_hud(self)
+	_apply_control_mode()
 
-	var joy := Control.new()
-	joy.set_script(JoystickScript)
-	_ui.add_child(joy)
 
-	# --- Barra de vida del JEFE (Fase 9, pulido) ---
-	# Solo informativa: MOUSE_FILTER_IGNORE en todo y fuera de
-	# is_point_on_ui — no roba taps (mismo trato que _low_hp).
-	var bpanel := PanelContainer.new()
-	bpanel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	bpanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	bpanel.grow_vertical = Control.GROW_DIRECTION_END
-	bpanel.position += Vector2(0, 64)
-	bpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_style_panel(bpanel, Color(0.12, 0.02, 0.02, 0.8))
-	bpanel.hide()
-	_ui.add_child(bpanel)
-	_boss_panel = bpanel
+# -------------------------------------------------------------
+# AJUSTES DE CONTROL — móvil/PC (local, per-device; NO viaja por red
+# ni va en el save de partida — ver SETTINGS_PATH). "auto" detecta si
+# hay pantalla táctil. En PC se desactiva el joystick virtual para que
+# el clic del ratón (emulate_touch_from_mouse) mine en cualquier zona,
+# incluida la esquina inferior-izquierda que el joystick acapararía.
+# -------------------------------------------------------------
+func _detect_platform() -> String:
+	if OS.has_feature("mobile") or DisplayServer.is_touchscreen_available():
+		return "movil"
+	return "pc"
 
-	var bbox := VBoxContainer.new()
-	bbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bbox.add_theme_constant_override("separation", 4)
-	bpanel.add_child(bbox)
 
-	var blbl := Label.new()
-	blbl.text = "👹 JEFE"
-	blbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	blbl.add_theme_font_size_override("font_size", 15)
-	blbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bbox.add_child(blbl)
-	_boss_label = blbl
+## Modo realmente en uso: el detectado si está en "auto", o el elegido.
+func effective_control_mode() -> String:
+	return _detect_platform() if control_mode == "auto" else control_mode
 
-	_boss_bar = ProgressBar.new()
-	_boss_bar.custom_minimum_size = Vector2(280, 16)
-	_boss_bar.min_value = 0.0
-	_boss_bar.max_value = 1.0
-	_boss_bar.show_percentage = false
-	_boss_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var bfill := StyleBoxFlat.new()
-	bfill.bg_color = Color("d6453f")
-	bfill.set_corner_radius_all(3)
-	_boss_bar.add_theme_stylebox_override("fill", bfill)
-	bbox.add_child(_boss_bar)
 
-	# --- Vida + herramienta equipada (arriba a la izquierda) ---
-	var hp_panel := PanelContainer.new()
-	hp_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	hp_panel.position += Vector2(12, 10)
-	_style_panel(hp_panel, Color(0.05, 0.06, 0.1, 0.75))
-	_ui.add_child(hp_panel)
-	_hp_panel = hp_panel
+func _load_settings() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) != OK:
+		return
+	var m := str(cfg.get_value("control", "mode", "auto"))
+	if m in CONTROL_MODES:
+		control_mode = m
 
-	var status_box := VBoxContainer.new()
-	status_box.add_theme_constant_override("separation", 4)
-	hp_panel.add_child(status_box)
 
-	_phase_label = Label.new()
-	_phase_label.add_theme_font_size_override("font_size", 16)
-	status_box.add_child(_phase_label)
+func _save_settings() -> void:
+	var cfg := ConfigFile.new()
+	cfg.set_value("control", "mode", control_mode)
+	cfg.save(SETTINGS_PATH)
 
-	var hp_row := HBoxContainer.new()
-	hp_row.add_theme_constant_override("separation", 8)
-	status_box.add_child(hp_row)
 
-	var hp_icon := Label.new()
-	hp_icon.text = "❤"
-	hp_icon.add_theme_font_size_override("font_size", 20)
-	hp_row.add_child(hp_icon)
+func set_control_mode(mode: String) -> void:
+	if mode not in CONTROL_MODES:
+		return
+	control_mode = mode
+	_save_settings()
+	_apply_control_mode()
+	_refresh_settings()
 
-	_hp_bar = ProgressBar.new()
-	_hp_bar.custom_minimum_size = Vector2(160, 22)
-	_hp_bar.min_value = 0
-	_hp_bar.max_value = PLAYER_MAX_HP
-	_hp_bar.show_percentage = false
-	var hp_fill := StyleBoxFlat.new()
-	hp_fill.bg_color = Color("d6453f")
-	hp_fill.set_corner_radius_all(4)
-	_hp_bar.add_theme_stylebox_override("fill", hp_fill)
-	hp_row.add_child(_hp_bar)
 
-	_hp_label = Label.new()
-	_hp_label.add_theme_font_size_override("font_size", 14)
-	hp_row.add_child(_hp_label)
+## Configura el joystick virtual según el modo efectivo (si el HUD existe).
+func _apply_control_mode() -> void:
+	if _joystick != null and _joystick.has_method("set_enabled"):
+		_joystick.set_enabled(effective_control_mode() == "movil")
 
-	_tool_label = Label.new()
-	_tool_label.add_theme_font_size_override("font_size", 16)
-	status_box.add_child(_tool_label)
 
-	_armor_label = Label.new()
-	_armor_label.add_theme_font_size_override("font_size", 16)
-	status_box.add_child(_armor_label)
+func _on_settings_pressed() -> void:
+	if _settings_panel == null:
+		return
+	_settings_panel.visible = not _settings_panel.visible
+	if _settings_panel.visible:
+		_refresh_settings()
 
-	# --- Inventario + info (abajo a la derecha) ---
-	var hud := VBoxContainer.new()
-	hud.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	hud.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	hud.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	hud.position += Vector2(-16, -16)
-	hud.add_theme_constant_override("separation", 8)
-	_ui.add_child(hud)
-	_hud_box = hud
 
-	_info = Label.new()
-	_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_info.add_theme_font_size_override("font_size", 16)
-	hud.add_child(_info)
+# --- Barra de items PLEGABLE (petición del jugador): plegarla deja la franja
+# inferior-derecha libre para minar/colocar debajo (antes acaparaba esos taps).
+func _toggle_items() -> void:
+	if _slots_box == null:
+		return
+	_slots_box.visible = not _slots_box.visible
+	_refresh_items_toggle()
 
-	var slots := HBoxContainer.new()
-	slots.add_theme_constant_override("separation", 10)
-	hud.add_child(slots)
 
-	var group := ButtonGroup.new()
-	for item: String in ["dirt", "stone", "wood", "muralla", "fogata", "trampa", "torre"]:
-		var b := Button.new()
-		b.toggle_mode = true
-		b.button_group = group
-		b.custom_minimum_size = Vector2(96, 72)
-		b.text = "%s\n0" % ITEM_NAMES[item]
-		b.pressed.connect(func(): selected_item = item)
-		slots.add_child(b)
-		_slot_buttons[item] = b
-	_slot_buttons[selected_item].button_pressed = true
+func _refresh_items_toggle() -> void:
+	if _items_toggle == null or _slots_box == null:
+		return
+	# ◀ = desplegado (clic para plegar hacia la derecha); ▶ = plegado (clic para mostrar)
+	_items_toggle.text = "◀" if _slots_box.visible else "🎒▶"
 
-	# --- Botón y panel de crafting (arriba a la derecha) ---
-	var craft_btn := Button.new()
-	craft_btn.text = "🛠️ Fabricar"
-	craft_btn.custom_minimum_size = Vector2(150, 52)
-	craft_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	craft_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	craft_btn.position += Vector2(-12, 10)
-	craft_btn.z_index = 2
-	_ui.add_child(craft_btn)
-	_craft_btn = craft_btn
 
-	var panel := PanelContainer.new()
-	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
-	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	panel.position += Vector2(-12, 0)
-	_style_panel(panel)
-	panel.hide()
-	_ui.add_child(panel)
-	_craft_panel = panel
-	craft_btn.pressed.connect(func(): panel.visible = not panel.visible)
-
-	var pbox := VBoxContainer.new()
-	pbox.add_theme_constant_override("separation", 10)
-	panel.add_child(pbox)
-
-	var ptop := HBoxContainer.new()
-	pbox.add_child(ptop)
-	var ptitle := Label.new()
-	ptitle.text = "🛠️ Fabricar (usa materiales, NO Núcleos)"
-	ptitle.add_theme_font_size_override("font_size", 18)
-	ptitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ptop.add_child(ptitle)
-	var pclose := Button.new()
-	pclose.text = "✕"
-	pclose.custom_minimum_size = Vector2(40, 40)
-	pclose.pressed.connect(func(): panel.hide())
-	ptop.add_child(pclose)
-
-	for rid: String in RECIPES:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 12)
-		pbox.add_child(row)
-
-		var lbl := Label.new()
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(lbl)
-
-		var cbtn := Button.new()
-		cbtn.text = "Crear"
-		cbtn.custom_minimum_size = Vector2(84, 44)
-		cbtn.pressed.connect(func(): craft_local(rid))
-		row.add_child(cbtn)
-
-		_craft_rows[rid] = {"label": lbl, "button": cbtn}
-
-	# --- Botón y panel de la TIENDA de skins (MONETIZACIÓN) ---
-	var shop_btn := Button.new()
-	shop_btn.text = "🛒 Tienda (skins)"
-	shop_btn.custom_minimum_size = Vector2(170, 52)
-	shop_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	shop_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	shop_btn.position += Vector2(-174, 10)
-	shop_btn.z_index = 2
-	shop_btn.pressed.connect(_on_shop_pressed)
-	_ui.add_child(shop_btn)
-	_shop_btn = shop_btn
-
-	var spanel := PanelContainer.new()
-	spanel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	spanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	spanel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	_style_panel(spanel)
-	spanel.hide()
-	_ui.add_child(spanel)
-	_shop_panel = spanel
-
-	var sbox := VBoxContainer.new()
-	sbox.add_theme_constant_override("separation", 10)
-	spanel.add_child(sbox)
-
-	var stop := HBoxContainer.new()
-	sbox.add_child(stop)
-	_shop_title = Label.new()
-	_shop_title.add_theme_font_size_override("font_size", 18)
-	_shop_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stop.add_child(_shop_title)
-	var sclose := Button.new()
-	sclose.text = "✕"
-	sclose.custom_minimum_size = Vector2(40, 40)
-	sclose.pressed.connect(func(): spanel.hide())
-	stop.add_child(sclose)
-
-	for sid: String in SKINS:
-		var srow := HBoxContainer.new()
-		srow.add_theme_constant_override("separation", 12)
-		sbox.add_child(srow)
-
-		var swatch := ColorRect.new()
-		swatch.color = SKINS[sid].cuerpo
-		swatch.custom_minimum_size = Vector2(28, 28)
-		srow.add_child(swatch)
-
-		var slbl := Label.new()
-		slbl.text = SKINS[sid].nombre
-		slbl.custom_minimum_size.x = 160
-		slbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		srow.add_child(slbl)
-
-		var sbtn := Button.new()
-		sbtn.custom_minimum_size = Vector2(130, 44)
-		sbtn.pressed.connect(_on_skin_pressed.bind(sid))
-		srow.add_child(sbtn)
-		_shop_rows[sid] = sbtn
-
-	# --- Panel de fin de run (Fase 9): victoria/derrota en supervivencia ---
-	var rpanel := PanelContainer.new()
-	rpanel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	rpanel.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	rpanel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	rpanel.z_index = 5
-	_style_panel(rpanel)
-	rpanel.hide()
-	_ui.add_child(rpanel)
-	_run_panel = rpanel
-
-	var rbox := VBoxContainer.new()
-	rbox.custom_minimum_size = Vector2(360, 0)
-	rbox.add_theme_constant_override("separation", 14)
-	rpanel.add_child(rbox)
-
-	_run_title = Label.new()
-	_run_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_run_title.add_theme_font_size_override("font_size", 26)
-	rbox.add_child(_run_title)
-
-	_run_body = Label.new()
-	_run_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_run_body.add_theme_font_size_override("font_size", 16)
-	rbox.add_child(_run_body)
-
-	var run_close := Button.new()
-	run_close.text = "Continuar en modo libre"
-	run_close.custom_minimum_size.y = 52
-	run_close.pressed.connect(func(): rpanel.hide())
-	rbox.add_child(run_close)
-
-	_refresh_info()
-	_refresh_shop()
-	_refresh_craft()
+func _refresh_settings() -> void:
+	if _settings_panel == null:
+		return
+	for mode: String in _control_buttons:
+		(_control_buttons[mode] as Button).button_pressed = (mode == control_mode)
+	var eff := effective_control_mode()
+	var det_txt := "móvil (pantalla táctil)" if _detect_platform() == "movil" else "PC (teclado/ratón)"
+	var eff_txt := "📱 joystick táctil" if eff == "movil" else "🖥️ teclado (WASD/flechas) + ratón"
+	_settings_hint.text = "Dispositivo detectado: %s\nControl activo: %s" % [det_txt, eff_txt]
 
 
 func _on_shop_pressed() -> void:
@@ -1492,7 +1725,15 @@ func _refresh_shop() -> void:
 
 
 func _refresh_craft() -> void:
-	for rid: String in _craft_rows:
+	for key: String in _craft_rows:
+		var row: Dictionary = _craft_rows[key]
+		var lbl: Label = row.label
+		var btn: Button = row.button
+		# Filas de equipo (pico/espada/armadura): "chain" guarda la cadena
+		# de tiers; rid es la SIGUIENTE mejora, no la receta de la fila.
+		var has_chain := row.has("chain")
+		var rid: String = _next_tier(row.chain, _my_inv) if has_chain else key
+		var maxed := has_chain and int(_my_inv.get(row.chain[-1], 0)) > 0
 		var costo: Dictionary = RECIPES[rid].costo
 		var partes := []
 		var alcanza := true
@@ -1502,14 +1743,12 @@ func _refresh_craft() -> void:
 			if tengo < necesito:
 				alcanza = false
 			partes.append("%s %d/%d" % [ITEM_NAMES[item].to_lower(), tengo, necesito])
-		var tiene := int(_my_inv.get(rid, 0)) > 0
-		var is_unique := rid.begins_with("pico_") or rid.begins_with("espada_") or rid.begins_with("armadura_")
-		var row: Dictionary = _craft_rows[rid]
-		var lbl: Label = row.label
-		var btn: Button = row.button
-		if is_unique:
-			lbl.text = "%s%s — %s" % ["✓ " if tiene else "", RECIPES[rid].nombre, ", ".join(partes)]
-			btn.disabled = tiene or not alcanza
+		if maxed:
+			lbl.text = "✓ %s — nivel máximo" % RECIPES[rid].nombre
+			btn.disabled = true
+		elif has_chain:
+			lbl.text = "%s — %s" % [RECIPES[rid].nombre, ", ".join(partes)]
+			btn.disabled = not alcanza
 		else:
 			var count := int(_my_inv.get(rid, 0))
 			var prefix := "(%d) " % count if count > 0 else ""
@@ -1519,7 +1758,11 @@ func _refresh_craft() -> void:
 
 func _refresh_info() -> void:
 	if _info != null:
-		_info.text = "🪙 %d   |   Mineral: %d" % [_my_coins, int(_my_inv.get("ore", 0))]
+		# Línea 1: Núcleos. Línea 2: CONTADOR DE MINERALES (todos, con icono).
+		var mins := ""
+		for mat: String in MINERAL_ICONS:
+			mins += "%s %d   " % [MINERAL_ICONS[mat], int(_my_inv.get(mat, 0))]
+		_info.text = "🪙 %d\n%s" % [_my_coins, mins.strip_edges()]
 	_refresh_status()
 
 

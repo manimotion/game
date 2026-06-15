@@ -176,6 +176,250 @@ arrancar la run para que el jugador planee su defensa desde el minuto cero.
    `_boss_announcement`, `night_wave` invoca `run_boss_kind`, HUD muestra el
    nombre del jefe vivo).
 
+## Refactor: arquitectura en 3 capas + pulido global ✅ HECHO (2026-06-11)
+
+Preparación estructural para la Fase 11+ (el gate de contenido sigue): el
+código quedó separado en núcleo/motor → reglas → presentación (ver
+**`ARQUITECTURA.md`**), de modo que crear modos/campañas es añadir datos.
+
+1. ✅ **`game_modes.gd` (capa de reglas)**: modos data-driven (duraciones,
+   `nights_to_win`, `death_ends_run`, `save_allowed`, `boss_every`,
+   `wave_base/step`, recompensas). `main.set_mode()` carga `mode_cfg` y
+   TODO el código (reloj, oleadas, win/lose, save, meteoros) lee de ahí.
+2. ✅ **Modo nuevo "Asedio"** (prueba de la capa): 3 noches brutales, días
+   cortos, oleadas 6+2·noche, jefe en la noche 3, recompensas dobles.
+   Apareció en el lobby sin tocar UI: el menú se genera desde
+   `GameModes.LOBBY_ORDER`.
+3. ✅ **`ui_builder.gd` (capa de presentación)**: lobby y HUD extraídos de
+   main.gd (~470 líneas), menú rediseñado (título dorado, tagline,
+   tarjetas de modo con descripción, secciones separadas) y paleta de UI
+   centralizada.
+4. ✅ **Telegraphs del bestiario** (legibilidad = juego justo): el snapshot
+   lleva un flag visual `st` — el embistedor tiembla y muestra "!" al
+   cargar, deja líneas de velocidad al embestir; los jefes tienen aura
+   pulsante y se encienden en rojo al enfurecer.
+5. ✅ **FX/SFX nuevos**: la fusión de slimes ahora se ve y suena en TODOS
+   los peers (rpc cosmético `fusion_fx` + sonido "fusion"); sonido "nido"
+   y aviso 🕳️ con la x del nido sembrado (demorado 4 s para no pisar el
+   toast de la noche).
+6. ✅ **4 skins nuevas del bestiario** (solo cosméticas): Topo, Nocturna,
+   Acero y Demonio.
+7. ✅ Test headless (TEST 33): los 3 modos existen, `set_mode` carga las
+   reglas, la oleada obedece `wave_base/step` del modo, skins y sonidos
+   nuevos registrados. 33 grupos de prueba en verde.
+
+## Expansión de mundo: biomas aéreo/profundo + cristal + bosques renovables ✅ HECHO (2026-06-12)
+
+Trabajo FUERA de la numeración de fases (igual que el refactor de 3 capas):
+NO es contenido de Fase 11+ (campañas/mundos temáticos, que sigue bloqueada)
+sino una ampliación del mundo base que da más motivo para excavar hacia
+arriba y hacia abajo, y evita que la madera se agote en runs largas.
+
+1. ✅ **Mundo más grande**: `W=200` (antes 160), `H=90` (antes 60), `SKY_ROWS=24`
+   (antes 14, cielo ampliado para más islas) y `DEEP_ROWS=12` (franja nueva
+   justo antes del bedrock). Sin cambios en `chunk_renderer.gd`, `player.gd`,
+   `tower_manager.gd` ni el resto de `main.gd`: todo lee `world.W/H/SKY_ROWS`
+   dinámicamente — el "mundo es datos puros + chunks" paga exactamente como
+   prometía `ARQUITECTURA.md`.
+2. ✅ **Cristal** (`T_CRYSTAL`, 160 HP, sólido, drop `"cristal"`): aparece en
+   el núcleo de las vetas del bioma subterráneo profundo (las `DEEP_ROWS`
+   filas antes del bedrock, `ore_noise > 0.55`) y en el núcleo de las islas
+   flotantes del bioma aéreo (`_spawn_islands`, ahora 7-11 islas, 12% de
+   probabilidad de cristal por celda). Un solo recurso nuevo da propósito a
+   AMBAS direcciones de excavación.
+3. ✅ **Pico de cristal** (`pico_cristal`: 4 madera + 6 cristal): el mejor
+   pico (`TOOL_DAMAGE=150`, por delante del dorado).
+4. ✅ **Bosques renovables**: `_plant_tree` ahora solo escribe en un
+   diccionario `changes` (no toca `tiles` directamente), reutilizable por
+   `generate()` (bulk, sin FX) y por `grow_trees()` (runtime, con FX +
+   `apply_changes.rpc`, mismo patrón que `meteor_strike`). Cada amanecer
+   (`_set_phase(false)`, si `night_number > 0`) el servidor intenta plantar
+   hasta 3 árboles nuevos en superficie despejada — `_surface_y` arranca en
+   `SKY_ROWS` para no confundir el suelo con las islas flotantes.
+5. ✅ Test headless (TEST 36): dimensiones del mundo, `T_CRYSTAL` sólido/HP/
+   drop + textura en Atlas, cristal generado en el subsuelo profundo Y en
+   las islas aéreas, `grow_trees()` añade troncos nuevos, receta y daño de
+   `pico_cristal`.
+
+## Bloque 1: Mundo vivo ✅ HECHO (2026-06-12)
+
+Primero de 4 bloques acordados con el jugador (sesión 2026-06-12) tras el
+feedback de que el mundo "ampliado" no se sentía distinto: las islas aéreas
+eran zona 100% segura y el subsuelo profundo solo cambiaba la densidad de
+mineral, sin ningún elemento visual propio. Ataca las 3 causas con un mismo
+hilo: minerales + tinte por bioma, presión ambiental anti-turtling y un
+banner de jefe propio.
+
+1. ✅ **5 tiles nuevos** (`world.gd`/`atlas.gd`): `T_WATER` (no sólido,
+   ralentiza al pisarlo), `T_FEATHER`/`T_AETHER` (bioma aéreo, drop
+   `"pluma"`/`"esencia"`) y `T_DIAMOND`/`T_EMBER` (bioma profundo, drop
+   `"diamante"`/`"ascua"`, `T_DIAMOND` más raro que `T_CRYSTAL`). Los 4
+   minerales quedan listos para el Bloque 2 sin tocar generación de mundo
+   otra vez.
+2. ✅ **Generación e identidad de bioma**: `_spawn_islands` reparte
+   `T_FEATHER`/`T_AETHER` en el núcleo de las islas junto a `T_CRYSTAL`; el
+   subsuelo profundo gana `T_DIAMOND`/`T_EMBER` y "ríos" de `T_WATER` (nuevo
+   `FastNoiseLite` `water`). `chunk_renderer` tiñe el cielo (frío/violeta) y
+   el subsuelo profundo (cálido) para que ambos biomas se distingan a simple
+   vista.
+3. ✅ **Agua ralentiza**: `player._simulate_step` aplica `WATER_SLOW=0.55` a
+   `velocity.x` sobre `T_WATER`, tanto en predicción local como en
+   `_process_remote_authority` (misma física). PULIDO: salpicadura + sonido
+   "agua" al entrar (cosmético local, `player._water_fx`).
+4. ✅ **Presión ambiental (anti-turtling)**: `main._update_zone_pressure`
+   clasifica a cada jugador con `_zone_at` (cielo/cueva/profundo/superficie).
+   Sin un "fuerte" propio cerca (`_has_fort`, `FORT_MIN_BLOCKS=4` en
+   `FORT_RADIUS=6`), tras `ZONE_PRESSURE_TIME=80s` sin pasar por superficie
+   ni fortificarse, avisa con un toast y llama
+   `npc_manager.spawn_near(kind, p)` (murciélago/topo/taladro según la zona)
+   — el enemigo aparece JUNTO al jugador, resolviendo las islas aéreas sin
+   amenazas. PULIDO: telegraph ⚠️ a los `PRESSURE_WARN_TIME=60s` (se puede
+   reaccionar antes del spawn — legibilidad = juego justo), la reincidencia
+   ESCALA (cada disparo trae un enemigo más, tope `PRESSURE_MAX_SPAWNS=3`;
+   fortificar o subir perdona), los toasts de presión suenan (⚠️ → "noche",
+   🌬️🦇🔥 → "invasion") y `UNDERGROUND_BAND=10` (la superficie generada llega
+   a `SKY_ROWS+8`: con la banda anterior de 6, un valle profundo contaba
+   como cueva y generaba presión injusta — bug arreglado).
+5. ✅ **Banner de jefe dedicado**: `_boss_announce_panel`/
+   `_boss_announce_label` (centrado, 8s con fade) reemplaza el toast genérico
+   para el anuncio del jefe de la run, vía RPC `show_boss_announcement`.
+6. ✅ Test headless (TEST 37a-g): tiles nuevos generados en su bioma con
+   HP/drop/sólido correctos, ralentización en agua + sonido "agua",
+   `_has_fort`, `_zone_at` (incluido que un valle de superficie NO es cueva),
+   telegraph ⚠️ antes del disparo, la presión ambiental dispara `spawn_near`
+   y escala al reincidir, banner de jefe con nombre.
+
+## Bloque 2: Progresión elemental y jefes adaptativos ✅ HECHO (2026-06-13)
+
+Segundo de los bloques acordados con el jugador (sesión 2026-06-12): da uso a
+los 4 minerales del Bloque 1, contiene el agua dispersa en lagos reconocibles
+y hace que el jefe de la run reaccione si el jugador se esconde en una zona
+que no puede amenazar.
+
+1. ✅ **Lagos contenidos**: `world._spawn_lakes()` (llamado tras
+   `_spawn_islands()` en `generate()`) reemplaza los "ríos" dispersos de
+   `water_noise` por un BFS flood-fill desde 2-4 puntos aleatorios de la banda
+   profunda, generando 2-4 lagos de `T_WATER` de 18-40 tiles — charcos grandes
+   y delimitados que sirven de barrera/ralentización cerca de torres y
+   pinchos.
+2. ✅ **Agua ralentiza también a los NPC terrestres**: `npc_manager._move`
+   aplica el mismo `WATER_SLOW=0.55` que `player._simulate_step` sobre
+   `T_WATER` (los voladores, `fly: true`, no se ven afectados).
+3. ✅ **Recetas mega de diamante**: `espada_diamante`
+   (`wood4+diamante6+ascua4`, `WEAPON_DAMAGE=90`) y `armadura_diamante`
+   (`stone10+diamante8+esencia4+pluma4`, `ARMOR_REDUCTION=10`) cierran
+   `TIER_CHAINS["espada"]`/`["armadura"]` tras la dorada (mismo gating de
+   `_do_craft`: hay que tener la dorada antes de poder craftear la de
+   diamante) — usan los 4 minerales del Bloque 1.
+4. ✅ **Torre mega**: `T_TOWER_MEGA` (18, 400 HP, sólido, drop
+   `"torre_mega"`), receta `stone20+diamante6+ascua4+cristal4`, bloque
+   apilable SIN cadena (`ITEM_TILE["torre_mega"] = T_TOWER_MEGA`).
+   `tower_manager` la dispara con más alcance/daño/cadencia
+   (`MEGA_RANGE=480`, `MEGA_COOLDOWN=0.7`, `MEGA_DAMAGE=40` vs `RANGE=320`,
+   `COOLDOWN=1.2`, `ARROW_DAMAGE=18`) y tiñe sus flechas celeste/diamante. El
+   panel "Fabricar" pasa de 7 a 8 filas (3 familias de equipo + 5 bloques
+   apilables: muralla/fogata/trampa/torre/torre_mega).
+5. ✅ **Jefes adaptativos**: `main.ZONE_BOSS_KIND` mapea cada zona a la
+   variante de jefe que puede amenazarla (cielo→murciélago,
+   cueva/profundo→topo, superficie→corredor). Si el jugador más cercano al
+   jefe pasa `BOSS_EVOLVE_TIME=60s` en una zona que el jefe activo no puede
+   alcanzar, `_update_boss_evolution` llama `npc_manager.evolve_boss(id,
+   target)` — el jefe MUTA a esa variante conservando vida proporcional y
+   resetea su FSM transitoria (sin embestidas/excavaciones a medias) — y
+   `_broadcast_boss_evolution` reutiliza el banner dedicado del Bloque 1 +
+   sonido "jefe". Cambiar de zona o ya ser la variante correcta resetea el
+   contador (evita mutar "de paso").
+6. ✅ Test headless (TEST 38a-h): lagos contenidos dentro de la banda
+   profunda, agua ralentiza a jugador y NPC por igual, recetas mega
+   craftean tras tener la dorada y no antes, `torre_mega` dispara con su
+   rango/daño/cadencia propios, `evolve_boss` conserva vida proporcional y
+   resetea la FSM, y la evolución se dispara/cancela según la zona del
+   jugador más cercano.
+
+## Bloque 3: Mundo vivo II — exploración y eventos ✅ HECHO (2026-06-13)
+
+Tercero de los bloques acordados con el jugador: da motivos para EXPLORAR el
+mundo expandido (cielo, superficie, subsuelo) con botín y eventos sorpresa,
+en vez de quedarse fabricando en la base.
+
+1. ✅ **Árboles en las islas aéreas**: `world._spawn_islands` planta un árbol
+   (`_plant_tree`) en la cima del ~55% de las islas — antes solo crecían en
+   la superficie; ahora el cielo también da madera.
+2. ✅ **Vías de tren abandonadas** (`T_RAIL`, 19): `_spawn_rails` EXCAVA 3-5
+   galerías mineras en el subsuelo (raíl + piso sólido + 2 de aire de techo).
+   `T_RAIL` no es sólido (no estorba); minarlo da **madera x2** (`RAIL_WOOD`,
+   rama propia de `world._do_hit`, sin `DROPS`).
+3. ✅ **Cofres de recursos** (`T_CHEST`, 20): `_spawn_chests` reparte ~2 por
+   banda (cielo/superficie/cueva/profundo). Al romperlo, `main.open_chest`
+   suelta botín de `CHEST_LOOT[zona]` (rango por material, `_zone_at` del
+   cofre) + Núcleos, con aviso solo al que lo abrió.
+4. ✅ **Calaveras estilo Halo** (`T_SKULL`, 21): `_spawn_skulls` entierra 7
+   calaveras en piedra/tierra (ocultas hasta excavarlas; todas se ven igual).
+   `main.excavate_skull` elige al azar una de las 5 `SKULLS` —3 buenas
+   (`monedas`/`cura`/`botin`) y 2 malas (`horda`=3 slimes, `bestia`=1 slime
+   grande junto al jugador)— y avisa a TODOS. No se sabe si ayuda al jugador
+   o a los enemigos hasta romperla.
+5. ✅ Test headless (TEST 40a-e): tiles nuevos con HP/DROPS/SOLID y textura,
+   generación siembra vías/cofres/calaveras y árboles en el cielo, vía da
+   madera x2, cofre profundo suelta diamante/ascua/cristal + Núcleos, y
+   excavar calaveras dispara efectos buenos Y malos.
+
+## Bloque 4: Bestiario vivo ✅ HECHO (2026-06-13)
+
+Cuarto bloque acordado con el jugador: más variedad y COMPORTAMIENTO de
+enemigos (no solo variantes de stats), ligados a los biomas y recursos.
+
+1. ✅ **Espectro** (`espectro`, `ghost`+`fly`): vuela y ATRAVIESA los muros
+   (`_move` ignora la colisión y solo lo acota al mundo) — un contrajuego a
+   amurallarse; se dibuja translúcido y palpitante. Suelta `esencia`.
+2. ✅ **Coracero** (`coracero`, `armor`): tanque lento que resta `armor=7`
+   a cada golpe recibido (en `_do_hit` y `damage_npc`, mín. 1 de daño) y
+   rompe murallas. Suelta `ascua`.
+3. ✅ **Sanador** (`sanador`, `heals`): apoyo que cada `HEAL_CD` cura
+   `HEAL_AMOUNT` a los enemigos NO jefe heridos en `HEAL_RADIUS` (pulso en
+   `_simulate` + `heal_fx` anillo verde) — vuelve resistentes a las hordas,
+   conviene matarlo primero. Suelta `pluma`.
+4. ✅ **Drops de bioma**: cada uno suelta su material (`drop`) además de
+   ore/Núcleos, así que cazarlos es otra vía de farmeo de los recursos del
+   Bloque 1. Entran por `_roll_kind_night` escalando con la noche
+   (sanador/espectro desde la 2, coracero desde la 4).
+5. ✅ Robustez: `world.spawn_nest` gana un barrido determinista de respaldo
+   (siembra el nido siempre que exista hueco) — cambiar tablas de spawn ya no
+   rompe el TEST 31 por desplazar el RNG.
+6. ✅ Test headless (TEST 41a-e): KINDS y sprites nuevos, el espectro
+   atraviesa la roca en `_move`, el coracero amortigua el daño, el sanador
+   cura a un aliado herido cercano y matar un enemigo de bioma suelta su
+   material propio.
+
+## Bloque 5: Identidad visual y sonora ✅ HECHO (2026-06-13)
+
+Último bloque acordado con el jugador: pulido audiovisual sobre todo el
+contenido nuevo (cofres, calaveras, sanador), que hasta ahora no tenía
+audio ni feedback visual propio.
+
+1. ✅ **SFX procedurales nuevos** (`sfx.gd`): `cofre` (arpegio ascendente),
+   `cura` (brillo suave) y `maldicion` (presagio grave), sintetizados al
+   arrancar como el resto (sin archivos de audio).
+2. ✅ **Cableado por prefijo de emoji** (`main._show_toast`, mismo patrón
+   que el resto): 📦→`cofre` (cofre abierto / calavera del botín),
+   💎→`moneda` (calavera del tesoro), 💚→`cura` (calavera vital),
+   😡→`maldicion` (calavera de la furia); la 👹 Calavera Maldita reusa el
+   rugido `jefe`. Aviso y sonido llegan juntos a todos los peers.
+3. ✅ **Sonido del sanador**: `npc_mgr._heal_fx` añade el brillo `cura`
+   cerca del jugador local — oír que sanan a la horda avisa de que conviene
+   matar al sanador primero.
+4. ✅ **FX de evento difundido** (`main.event_fx`, rpc cosmético): estallido
+   dorado al abrir un cofre y verde/rojo al excavar una calavera buena/mala,
+   visible en TODOS los peers (usa `world.fx`, no toca estado — GDD §16).
+5. ✅ Test headless (TEST 43): los streams nuevos existen, los toasts de
+   cofre/calavera se muestran y enrutan sonido por prefijo, y `event_fx`
+   corre sin romper.
+
+Con esto los **Bloques 1-5 (todos los acordados con el jugador) están
+completos**. El siguiente hito es VALIDAR DIVERSIÓN con jugadores reales —
+puerta de entrada a la Fase 11+ (campañas/mundos temáticos), que sigue
+bloqueada hasta entonces.
+
 ## Fase 11+ — Evolución futura (del doc de visión, NO empezar aún)
 
 - **Modo Campañas** (historia, NPCs, eventos — estilo Wesnoth).

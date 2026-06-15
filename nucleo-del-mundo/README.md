@@ -42,14 +42,22 @@ torres) es una vía de progresión tan importante como el equipo.
   mega topo, mega corredor) se elige al azar y se **anuncia al iniciar la
   run** con una pista táctica.
 
+- **Arquitectura en 3 capas** (ver [`ARQUITECTURA.md`](ARQUITECTURA.md)):
+  núcleo/motor → reglas de juego data-driven (`game_modes.gd`: añadir un
+  modo es añadir una entrada) → presentación (`ui_builder.gd`, atlas, sfx).
+  Incluye el modo **Asedio** (3 noches brutales) como prueba de la capa,
+  telegraphs visuales del bestiario (aviso de embestida, aura/enrage de
+  jefes), FX y sonido de fusión en red, y 4 skins nuevas del bestiario.
+
 La Fase 11+ (campañas / mundos temáticos) está **bloqueada** hasta validar
-diversión con jugadores reales.
+diversión con jugadores reales — pero la arquitectura ya las soporta:
+una campaña será una secuencia de configs de modo.
 
 ## 🎮 Cómo se juega
 
 - **Lobby**: elige "🌙 Supervivencia — 7 noches" (sin guardado, con
-  victoria/derrota) o "🏖️ Sandbox libre" (con guardado y sin oleadas
-  nocturnas exigentes).
+  victoria/derrota), "⚔️ Asedio — 3 noches" (corto y brutal, jefe en la
+  última noche) o "🏖️ Sandbox libre" (con guardado, sin presión).
 - **De día**: mina, recolecta madera/piedra/mineral y fabrica equipo y
   bloques de defensa (panel "🛠️ Fabricar").
 - **Al anochecer**: un toast avisa y llega una oleada que escala con el
@@ -96,11 +104,13 @@ godot --headless --path . res://tests/smoke_craft.tscn --quit-after 10
 /tests/
   smoke_craft.tscn + smoke_craft.gd   Smoke test headless (32 grupos de prueba)
 /scripts/
+  game_modes.gd        CAPA DE REGLAS — modos de juego data-driven
+  ui_builder.gd        CAPA DE PRESENTACIÓN — construye lobby y HUD
   network_manager.gd   Autoload "Net" — host/join ENet, señales de conexión
   sfx.gd               Autoload "Sfx" — SFX y música procedurales (cosmético, local)
   atlas.gd             Autoload "Atlas" — sprites/texturas generados por código
   fx.gd                Partículas, textos flotantes, anillos de impacto, ambiente
-  main.gd              Lobby, HUD, crafting, ciclo día/noche, estructura de run,
+  main.gd              Orquestador: crafting, ciclo día/noche, estructura de run,
                         persistencia, monetización, scheduler, modo --server
   world.gd             Tiles, chunks/streaming, generación (cuevas + islas),
                         HP por tile, minado/colocación, meteoro, nidos (T_NEST)
@@ -114,6 +124,8 @@ godot --headless --path . res://tests/smoke_craft.tscn --quit-after 10
 
 ## 📚 Documentación
 
+- [`ARQUITECTURA.md`](ARQUITECTURA.md) — las 3 capas (núcleo → reglas →
+  presentación) y cómo añadir modos de juego y campañas.
 - [`CLAUDE.md`](CLAUDE.md) — arquitectura (autoridad del servidor, patrón de
   RPCs, mundo como datos puros, chunks, NPCs), convenciones y trampas conocidas.
 - [`ROADMAP.md`](ROADMAP.md) — plan por fases, qué se hizo en cada una y qué

@@ -25,6 +25,7 @@ const SPIKE_DAMAGE := 25       # daño de la trampa de pinchos por contacto (Fas
 const SPIKE_CD := 0.5          # cooldown del daño de pinchos (mientras está sobre la trampa)
 const BOSS_EVERY := 5          # cada cuántas noches aparece un jefe (Fase 9)
 const DIG_CD := 1.2            # cooldown de excavar el bloque de abajo ("digs", Fase 10)
+const BOSS_TUNNEL_CD := 0.55   # cooldown del jefe al romper un obstáculo hacia el jugador
 const CHARGE_WINDUP := 0.9     # segundos "cargando" antes de embestir ("charges", Fase 10)
 const CHARGE_SPEED := 420.0    # velocidad horizontal durante la embestida
 const CHARGE_TILES := 5.0      # cuadros recorridos por la embestida
@@ -33,6 +34,11 @@ const MERGE_RADIUS := 46.0     # distancia para que dos slimes empiecen a fusion
 const MERGE_TIME := 8.0        # segundos juntos antes de fusionarse (Fase 10)
 const NEST_SCAN_EVERY := 4.0   # re-escaneo de world.tiles buscando nidos (Fase 10)
 const NEST_SPAWN_EVERY := 22.0 # cada cuánto un nido vivo escupe un enemigo
+const WATER_SLOW := 0.55       # ralentización en T_WATER, igual que el jugador (Bloque 2)
+# Bloque 4 "Bestiario vivo": curación de apoyo del "sanador"
+const HEAL_CD := 3.0           # cada cuánto pulsa la cura
+const HEAL_AMOUNT := 14        # vida que devuelve a cada enemigo cercano
+const HEAL_RADIUS := 150.0     # alcance del pulso de cura
 
 # Variantes de NPC: stats + botín + tamaño visual (la colisión usa
 # SIZE para todas — solo cambia el dibujo). "fly" = vuela sin
@@ -56,21 +62,34 @@ const KINDS := {
 	"murcielago": {"hp": 45, "dmg": 6, "speed": 150.0, "coins": 4, "ore": 0,
 		"w": 32.0, "h": 18.0, "color": Color("6b5b8e"), "fly": true},
 	"taladro": {"hp": 90, "dmg": 10, "speed": 60.0, "coins": 7, "ore": 1,
-		"w": 32.0, "h": 28.0, "color": Color("8a8f9b"), "block_dmg": 50, "digs": true},
+		"w": 32.0, "h": 28.0, "color": Color("8a8f9b"), "block_dmg": 50, "digs": true, "walks": true},
 	"topo": {"hp": 55, "dmg": 6, "speed": 90.0, "coins": 5, "ore": 1,
 		"w": 32.0, "h": 24.0, "color": Color("6b4a3a"), "block_dmg": 10,
-		"digs": true, "cave": true},
+		"digs": true, "cave": true, "walks": true},
 	"embistedor": {"hp": 110, "dmg": 14, "speed": 90.0, "coins": 9, "ore": 2,
 		"w": 44.0, "h": 32.0, "color": Color("c46a3a"), "charges": true, "charge_dmg": 24},
+	# Bloque 4 "Bestiario vivo": 3 enemigos con comportamiento propio.
+	# "ghost" = vuela Y atraviesa los muros (anti-turtling); "armor" = resta
+	# daño recibido (tanque); "heals" = cura a los enemigos cercanos (apoyo).
+	# "drop" = material de bioma que sueltan al morir (además de ore/Núcleos).
+	"espectro": {"hp": 60, "dmg": 9, "speed": 130.0, "coins": 6, "ore": 0,
+		"w": 34.0, "h": 26.0, "color": Color("aeb8e8"), "fly": true, "ghost": true,
+		"drop": "esencia"},
+	"coracero": {"hp": 210, "dmg": 12, "speed": 68.0, "coins": 12, "ore": 2,
+		"w": 48.0, "h": 38.0, "color": Color("8a909c"), "armor": 7, "block_dmg": 30,
+		"drop": "ascua", "walks": true},
+	"sanador": {"hp": 80, "dmg": 4, "speed": 105.0, "coins": 10, "ore": 1,
+		"w": 36.0, "h": 28.0, "color": Color("46c98e"), "heals": true,
+		"drop": "pluma", "walks": true},
 	"jefe": {"hp": 500, "dmg": 18, "speed": 65.0, "coins": 50, "ore": 6,
 		"w": 64.0, "h": 50.0, "color": Color("d6453f"), "block_dmg": 60,
-		"boss": true, "nombre": "Jefe Demonio"},
+		"boss": true, "nombre": "Jefe Demonio", "walks": true},
 	"jefe_murcielago": {"hp": 620, "dmg": 20, "speed": 110.0, "coins": 60, "ore": 7,
 		"w": 90.0, "h": 60.0, "color": Color("6b5b8e"), "fly": true,
 		"boss": true, "nombre": "Murciélago Gigante"},
 	"jefe_topo": {"hp": 600, "dmg": 20, "speed": 70.0, "coins": 60, "ore": 7,
 		"w": 80.0, "h": 56.0, "color": Color("6b4a3a"), "block_dmg": 70,
-		"digs": true, "boss": true, "nombre": "Mega Topo"},
+		"digs": true, "boss": true, "nombre": "Mega Topo", "walks": true},
 	"jefe_corredor": {"hp": 560, "dmg": 20, "speed": 100.0, "coins": 60, "ore": 7,
 		"w": 84.0, "h": 52.0, "color": Color("c46a3a"), "charges": true, "charge_dmg": 35,
 		"boss": true, "nombre": "Mega Corredor"},
@@ -88,6 +107,7 @@ var _sync_t := 0.0
 var _vis: Dictionary = {}     # id -> {prev, vy} (squash visual, Fase 5B)
 var _nests: Dictionary = {}   # coord T_NEST -> tiempo acumulado (Fase 10)
 var _nest_scan_t := 0.0
+var _had_npcs := false        # para redibujar una última vez al morir el último NPC
 
 @onready var main: Node2D = get_parent()
 
@@ -100,7 +120,7 @@ func _process(delta: float) -> void:
 			_sync_t = 0.0
 			var snap := {}
 			for id: int in npcs:
-				snap[id] = [npcs[id].pos, npcs[id].kind, _ratio_of(npcs[id])]
+				snap[id] = [npcs[id].pos, npcs[id].kind, _ratio_of(npcs[id]), _state_flag(npcs[id])]
 			sync_npcs.rpc(snap)
 	# Velocidad vertical estimada por peer (anima el squash sin red extra)
 	for id: int in npcs:
@@ -112,8 +132,13 @@ func _process(delta: float) -> void:
 	for id: int in _vis.keys():
 		if not npcs.has(id):
 			_vis.erase(id)
-	if not npcs.is_empty():
+	# Redibuja mientras haya NPCs, y UNA VEZ MÁS cuando el último muere
+	# (si no, su sprite queda "pegado" en pantalla con el último _draw()
+	# hasta que vuelva a haber NPCs y se dispare un redraw de nuevo).
+	var has_npcs := not npcs.is_empty()
+	if has_npcs or _had_npcs:
 		queue_redraw()
+	_had_npcs = has_npcs
 
 
 func _kind_of(n: Dictionary) -> Dictionary:
@@ -127,18 +152,56 @@ func _ratio_of(n: Dictionary) -> float:
 	return float(n.get("ratio", 1.0))
 
 
+## NPCs vivos que NO son "boss". Los jefes quedan "fuera del WAVE_CAP" de
+## forma PERSISTENTE (no solo al spawnear): si no, un jefe sin matar ocupa
+## un cupo para siempre y frena las oleadas/spawns siguientes — grave en
+## una run sin fin como sandbox (boss_every sigue sumando jefes).
+func _non_boss_count() -> int:
+	var n := 0
+	for id: int in npcs:
+		if not bool(_kind_of(npcs[id]).get("boss", false)):
+			n += 1
+	return n
+
+
+## Estado VISUAL del NPC para el snapshot (0 nada, 1 cargando la
+## embestida, 2 embistiendo, 3 jefe enfurecido): permite a los
+## clientes dibujar telegraphs sin conocer la FSM real — el flag
+## es puramente cosmético, el estado de verdad nunca sale del server.
+func _state_flag(n: Dictionary) -> int:
+	if n.has("hp"):
+		var k := _kind_of(n)
+		if bool(k.get("boss", false)) and _ratio_of(n) < BOSS_ENRAGE_HP:
+			return 3
+		match str(n.get("charge_state", "")):
+			"winding": return 1
+			"charging": return 2
+		return 0
+	return int(n.get("st", 0))
+
+
 func _draw() -> void:
 	# Slime gelatinoso: se estira al saltar/caer y se aplasta al tocar suelo.
 	# Tamaño y textura según la variante; barra de vida si está dañado.
+	# Telegraphs (st del snapshot): sacudida + "!" cargando la embestida,
+	# líneas de velocidad embistiendo, aura pulsante en jefes y tinte
+	# rojo si el jefe está enfurecido — TODO legible a primera vista.
+	var ms := float(Time.get_ticks_msec())
 	for id: int in npcs:
 		var n: Dictionary = npcs[id]
 		var k := _kind_of(n)
 		var p: Vector2 = n.pos
+		var st := _state_flag(n)
 		var tex: Texture2D = Atlas.slimes.get(n.get("kind", "normal"), Atlas.slimes["normal"])
+		# Aura del jefe: anillo cálido que respira (más rápido enfurecido)
+		if bool(k.get("boss", false)):
+			var pulse := 0.5 + 0.5 * sin(ms / (90.0 if st == 3 else 220.0) + id)
+			var ac := Color(0.95, 0.35, 0.2, 0.10 + 0.08 * pulse) if st == 3 \
+				else Color(k.color.r, k.color.g, k.color.b, 0.07 + 0.05 * pulse)
+			draw_circle(p, float(k.w) * (0.75 + 0.1 * pulse), ac)
 		var rect: Rect2
 		if bool(k.get("fly", false)):
 			# Volador: anclado al centro, con aleteo y vaivén
-			var ms := float(Time.get_ticks_msec())
 			var w: float = float(k.w) * (1.0 + 0.14 * sin(ms / 90.0 + id))
 			var h: float = float(k.h)
 			var bob := 3.0 * sin(ms / 130.0 + id * 1.7)
@@ -150,7 +213,29 @@ func _draw() -> void:
 			var w2: float = float(k.w) * (1.0 - stretch * 0.6)
 			var h2: float = float(k.h) * (1.0 + stretch)
 			rect = Rect2(p.x - w2 * 0.5, p.y + 10.0 - h2, w2, h2)
-		draw_texture_rect(tex, rect, false)
+		var tint := Color.WHITE
+		# Bloque 4: el espectro se dibuja translúcido y palpitante (etéreo).
+		if bool(k.get("ghost", false)):
+			tint = Color(1, 1, 1, 0.5 + 0.18 * sin(ms / 200.0 + id))
+		if st == 1:
+			# Cargando: tiembla y avisa con "!" — el jugador puede apartarse
+			rect.position.x += 2.0 * sin(ms / 28.0 + id)
+			draw_string(ThemeDB.fallback_font, Vector2(p.x - 5.0, rect.position.y - 12.0),
+				"!", HORIZONTAL_ALIGNMENT_CENTER, 12, 18, Color(1.0, 0.85, 0.2))
+		elif st == 2:
+			# Embistiendo: estela de líneas de velocidad detrás (la dirección
+			# sale de la posición previa — funciona igual en server y clientes)
+			var prev: Vector2 = _vis.get(id, {}).get("prev", p)
+			var dx := -signf(p.x - prev.x)
+			if dx == 0.0:
+				dx = 1.0
+			for i in 3:
+				var off := dx * (14.0 + i * 12.0)
+				draw_line(p + Vector2(off, -6.0 + i * 6.0), p + Vector2(off + dx * 10.0, -6.0 + i * 6.0),
+					Color(1, 1, 1, 0.35 - i * 0.1), 2.0)
+		elif st == 3:
+			tint = Color(1.0, 0.65, 0.6)   # jefe enfurecido: se enciende en rojo
+		draw_texture_rect(tex, rect, false, tint)
 		var ratio := _ratio_of(n)
 		if ratio < 1.0:
 			var bw: float = float(k.w)
@@ -208,23 +293,65 @@ func _simulate(delta: float) -> void:
 		elif bool(k.get("charges", false)):
 			# Embestidor / jefe_corredor: carga y embiste en horizontal (Fase 10)
 			_update_charge(n, k, target, best, delta, w, enraged)
+		elif bool(k.get("walks", false)):
+			# CAMINAR (rediseño: no todos saltan): avanza en horizontal hacia el
+			# jugador, con auto-step para escalones — topo, taladro, coracero,
+			# sanador y los jefes terrestres (demonio/topo). Sin el rebote del slime.
+			var wspd := float(k.speed) * (BOSS_ENRAGE_SPEED if enraged else 1.0)
+			_walk_step(n, target, best, wspd, w)
+			n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
 		else:
-			# Saltar: hacia el jugador si está cerca, si no, deambular.
-			# Cualquier "boss" se ENFURECE bajo BOSS_ENRAGE_HP: corre y salta más (Fase 9/10).
+			# Saltar (SLIMES): rebote hacia el jugador. Más FORMAS DE ALCANZARLO
+			# (petición del jugador): el "dorado" es un saltarín ágil (salta más
+			# alto y lejos); y CUALQUIER slime que tope con un muro hacia el
+			# jugador salta MÁS ALTO para treparlo — así te alcanzan aunque te
+			# subas a bloques, sin depender solo de romper la pared.
 			var spd := float(k.speed)
-			var jump := -430.0
+			var jump := -545.0 if str(n.kind) == "dorado" else -430.0
 			if enraged:
 				spd *= BOSS_ENRAGE_SPEED
-				jump = -500.0
+				jump = -520.0
 			if _on_floor(n, w) and n.jump_t <= 0.0:
 				n.jump_t = randf_range(0.8, 1.6)
-				n.vel.y = jump
+				var jv := jump
 				if target != null and best < CHASE_RANGE:
-					n.vel.x = signf(target.position.x - n.pos.x) * spd
+					var d := signf(target.position.x - n.pos.x)
+					n.vel.x = d * spd
+					# ¿muro al frente a la altura del cuerpo? salta alto para treparlo
+					if d != 0.0 and w.is_solid(Vector2i(floori(n.pos.x / w.TILE) + int(d), floori(n.pos.y / w.TILE))):
+						jv = jump * 1.45
 				else:
 					n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
+				n.vel.y = jv
 			n.vel.y = minf(n.vel.y + GRAVITY * delta, MAX_FALL)
 		_move(n, delta, w)
+
+		# Petición del jugador: CUALQUIER jefe excava roca/murallas en
+		# TODA dirección hacia el jugador para llegar hasta él (carva un
+		# túnel diagonal; cada bloque aguanta los golpes que su HP exija).
+		# Aplica también a jefes voladores (si los amurallan).
+		if bool(k.get("boss", false)) and target != null:
+			_boss_tunnel(n, k, target, w, delta)
+
+		# Bloque 4 "Bestiario vivo": el "sanador" pulsa cura a los enemigos
+		# cercanos (no a los jefes) cada HEAL_CD — vuelve resistentes a las
+		# hordas, así que conviene matarlo primero. Solo cura a heridos.
+		if bool(k.get("heals", false)):
+			n.heal_cd = maxf(0.0, n.get("heal_cd", 0.0) - delta)
+			if n.heal_cd <= 0.0:
+				n.heal_cd = HEAL_CD
+				var healed := false
+				for oid: int in npcs:
+					var o: Dictionary = npcs[oid]
+					var ok := _kind_of(o)
+					if bool(ok.get("boss", false)):
+						continue
+					if o.pos.distance_to(n.pos) <= HEAL_RADIUS and int(o.hp) < int(ok.hp):
+						o.hp = mini(int(o.hp) + HEAL_AMOUNT, int(ok.hp))
+						healed = true
+				if healed:
+					heal_fx.rpc(n.pos)
+					_heal_fx(n.pos)
 
 		# Fase 8/10: trampa de pinchos — daña a los NPCs terrestres que la
 		# pisan; los excavadores ("digs": taladro/topo/jefe_topo) son
@@ -247,8 +374,9 @@ func _simulate(delta: float) -> void:
 							continue
 
 			# Fase 10: "rompedor vertical" — excava periódicamente el
-			# bloque de abajo (taladro/topo/jefe_topo), abriendo pozos.
-			if bool(k.get("digs", false)):
+			# bloque de abajo (taladro/topo). Los JEFES usan _boss_tunnel
+			# (rompe en toda dirección), así que aquí se excluyen.
+			if bool(k.get("digs", false)) and not bool(k.get("boss", false)):
 				n.dig_cd = maxf(0.0, n.get("dig_cd", 0.0) - delta)
 				if n.dig_cd <= 0.0:
 					var below := Vector2i(floori(n.pos.x / w.TILE), floori((n.pos.y + SIZE.y * 0.5 + 2.0) / w.TILE))
@@ -261,8 +389,8 @@ func _simulate(delta: float) -> void:
 
 		# Fase 7: NPCs terrestres golpean el bloque que les cierra el
 		# paso hacia el jugador (murallas, terreno). Los voladores lo
-		# esquivan por arriba.
-		if not bool(k.get("fly", false)) and target != null \
+		# esquivan por arriba. Los JEFES usan _boss_tunnel (toda dirección).
+		if not bool(k.get("fly", false)) and not bool(k.get("boss", false)) and target != null \
 				and best < CHASE_RANGE and n.block_cd <= 0.0:
 			var dir_x := signf(target.position.x - n.pos.x)
 			if dir_x != 0.0:
@@ -289,6 +417,42 @@ func _simulate(delta: float) -> void:
 					break
 
 	_process_fusions(delta)
+
+
+## Petición del jugador: el JEFE rompe roca/murallas/obstáculos en TODA
+## dirección hacia el jugador para alcanzarlo (no solo de frente o hacia
+## abajo). Cada BOSS_TUNNEL_CD golpea el bloque inmediato en el eje X y en
+## el eje Y hacia el jugador — carva un túnel diagonal y derriba cualquier
+## infraestructura por el camino; cada bloque aguanta los golpes que su HP
+## exija (una muralla de 400 HP cae en HP/block_dmg golpes). Vale también
+## para jefes voladores si los amurallan.
+func _boss_tunnel(n: Dictionary, k: Dictionary, target: Node2D, w: Node2D, delta: float) -> void:
+	n.tunnel_cd = maxf(0.0, n.get("tunnel_cd", 0.0) - delta)
+	if n.tunnel_cd > 0.0:
+		return
+	var dmg := int(k.get("block_dmg", k.dmg))
+	var cx := floori(n.pos.x / w.TILE)
+	var cy := floori(n.pos.y / w.TILE)
+	var sx := int(signf(target.position.x - n.pos.x))   # tile vecino en X hacia el jugador
+	var sy := int(signf(target.position.y - n.pos.y))   # tile vecino en Y hacia el jugador
+	var hit := false
+	if sx != 0 and _breakable(Vector2i(cx + sx, cy), w):
+		w.damage_tile(Vector2i(cx + sx, cy), dmg)
+		hit = true
+	if sy != 0 and _breakable(Vector2i(cx, cy + sy), w):
+		w.damage_tile(Vector2i(cx, cy + sy), dmg)
+		hit = true
+	if hit:
+		n.tunnel_cd = BOSS_TUNNEL_CD
+		block_hit_fx.rpc(n.pos)
+		_block_hit_fx(n.pos)
+
+
+## ¿Tile sólido, destructible y no indestructible (bedrock)? — destino válido
+## para que el jefe lo derribe al excavar hacia el jugador.
+func _breakable(c: Vector2i, w: Node2D) -> bool:
+	var t: int = w.tiles.get(c, 0)
+	return t != 0 and t != w.T_BEDROCK and w.SOLID.has(t) and w.HP.has(t)
 
 
 ## Embistedor / jefe_corredor (Fase 10): se detiene "cargando" durante
@@ -326,13 +490,8 @@ func _update_charge(n: Dictionary, k: Dictionary, target: Node2D, best: float, d
 			if state == "cooldown" and n.charge_cd <= 0.0:
 				n.charge_state = "idle"
 				state = "idle"
-			if _on_floor(n, w) and n.jump_t <= 0.0:
-				n.jump_t = randf_range(0.8, 1.6)
-				n.vel.y = -430.0
-				if target != null and best < CHASE_RANGE:
-					n.vel.x = signf(target.position.x - n.pos.x) * spd
-				else:
-					n.vel.x = [-1.0, 0.0, 1.0].pick_random() * 70.0
+			# CAMINA (no salta) entre embestidas — rediseño de movimiento
+			_walk_step(n, target, best, spd, w)
 			if state == "idle" and target != null and best < CHASE_RANGE \
 					and absf(target.position.y - n.pos.y) < SIZE.y \
 					and n.charge_cd <= 0.0 and _on_floor(n, w):
@@ -383,9 +542,73 @@ func _fuse(ida: int, idb: int) -> void:
 	a.hp = int(KINDS[new_kind].hp)
 	a.near_t = 0.0
 	npcs.erase(idb)
+	fusion_fx.rpc(a.pos, new_kind)
+	_fusion_fx(a.pos, new_kind)
+
+
+## Evolución de jefe por zona (Bloque 2 "Progresión elemental"): cuando el
+## jugador lleva BOSS_EVOLVE_TIME en una zona que el jefe activo no puede
+## amenazar (p.ej. "jefe_topo" no alcanza una isla del cielo), main.gd llama
+## esto para mutar el jefe a la variante de esa zona (main.ZONE_BOSS_KIND).
+## Conserva posición y vida PROPORCIONAL (igual idea que _fuse: reasigna
+## kind/hp sin reiniciar el combate) y limpia el estado transitorio de la
+## FSM anterior para que la nueva variante arranque "idle" sin
+## comportamientos heredados (p.ej. una embestida a medias).
+func evolve_boss(id: int, new_kind: String) -> void:
+	if not npcs.has(id):
+		return
+	var n: Dictionary = npcs[id]
+	if n.kind == new_kind:
+		return
+	var ratio := _ratio_of(n)
+	n.kind = new_kind
+	n.hp = maxi(1, int(KINDS[new_kind].hp * ratio))
+	n.vel = Vector2.ZERO
+	n.cool = 0.0
+	n.jump_t = 0.0
+	n.block_cd = 0.0
+	n.spike_cd = 0.0
+	n.dig_cd = 0.0
+	n.charge_state = "idle"
+	n.charge_cd = 0.0
+	n.near_t = 0.0
+	n.tunnel_cd = 0.0
+	boss_evolve_fx.rpc(n.pos, new_kind)
+	_boss_evolve_fx(n.pos, new_kind)
+
+
+# FX cosmético de la evolución de jefe (Bloque 2): ráfaga + anillo grande
+# en TODOS los peers — misma idea que _fusion_fx pero a escala de jefe.
+@rpc("authority", "call_remote", "unreliable")
+func boss_evolve_fx(pos: Vector2, new_kind: String) -> void:
+	_boss_evolve_fx(pos, new_kind)
+
+
+func _boss_evolve_fx(pos: Vector2, new_kind: String) -> void:
+	var col: Color = KINDS.get(new_kind, KINDS["jefe"]).color
 	if main.world != null and main.world.fx != null:
-		main.world.fx.burst(a.pos, KINDS[new_kind].color, 22, 170.0)
-		main.world.fx.ring(a.pos, 70.0, KINDS[new_kind].color)
+		main.world.fx.burst(pos, col, 32, 220.0)
+		main.world.fx.ring(pos, 110.0, col)
+	var me: Node2D = main.players.get(multiplayer.get_unique_id())
+	if me != null and me.position.distance_to(pos) < 1100.0:
+		Sfx.play("fusion")
+
+
+# FX cosmético de la fusión de slimes (Fase 10, pulido): ráfaga + anillo
+# + sonido viscoso en TODOS los peers (antes solo lo veía el servidor).
+@rpc("authority", "call_remote", "unreliable")
+func fusion_fx(pos: Vector2, new_kind: String) -> void:
+	_fusion_fx(pos, new_kind)
+
+
+func _fusion_fx(pos: Vector2, new_kind: String) -> void:
+	var col: Color = KINDS.get(new_kind, KINDS["normal"]).color
+	if main.world != null and main.world.fx != null:
+		main.world.fx.burst(pos, col, 22, 170.0)
+		main.world.fx.ring(pos, 70.0, col)
+	var me: Node2D = main.players.get(multiplayer.get_unique_id())
+	if me != null and me.position.distance_to(pos) < 900.0:
+		Sfx.play("fusion")
 
 
 # -------------------------------------------------------------
@@ -409,7 +632,7 @@ func _update_nests(delta: float, w: Node2D) -> void:
 		_nests[c] += delta
 		if _nests[c] >= NEST_SPAWN_EVERY:
 			_nests[c] = 0.0
-			if npcs.size() < WAVE_CAP:
+			if _non_boss_count() < WAVE_CAP:
 				_spawn_from_nest(c, w)
 
 
@@ -434,7 +657,7 @@ func forget_nest(coord: Vector2i) -> void:
 
 
 func _try_spawn() -> void:
-	if npcs.size() >= MAX_NPCS or main.players.is_empty() or main.world == null:
+	if _non_boss_count() >= MAX_NPCS or main.players.is_empty() or main.world == null:
 		return
 	var kind := _roll_kind_night(main.night_number) if main.is_night else _roll_kind()
 	_spawn_one(kind, main.players.values().pick_random())
@@ -458,6 +681,19 @@ func _roll_kind() -> String:
 func _roll_kind_night(night: int) -> String:
 	var r := randf()
 	var p := 0.0
+	# Bloque 4 "Bestiario vivo": el sanador entra pronto (apoyo de horda), el
+	# coracero (tanque) y el espectro (atraviesa muros) escalan más tarde.
+	if night >= 2:
+		p += 0.07
+		if r < p:
+			return "sanador"
+		p += 0.07
+		if r < p:
+			return "espectro"
+	if night >= 4:
+		p += 0.07
+		if r < p:
+			return "coracero"
 	if night >= 3:
 		p += 0.10
 		if r < p:
@@ -480,6 +716,13 @@ func _roll_kind_night(night: int) -> String:
 	return "normal"
 
 
+## Inserta un NPC nuevo en `npcs` (helper común de _spawn_one/spawn_near).
+func _insert_npc(kind: String, pos: Vector2) -> void:
+	npcs[_next_id] = {"pos": pos, "vel": Vector2.ZERO, "hp": int(KINDS[kind].hp),
+		"kind": kind, "cool": 0.0, "jump_t": randf_range(0.0, 1.0), "block_cd": 0.0}
+	_next_id += 1
+
+
 func _spawn_one(kind: String, near: Node2D) -> void:
 	var w: Node2D = main.world
 	var x := clampi(floori(near.position.x / w.TILE) + randi_range(-12, 12), 2, w.W - 3)
@@ -491,9 +734,27 @@ func _spawn_one(kind: String, near: Node2D) -> void:
 		pos.y -= 4.0
 		if bool(KINDS[kind].get("fly", false)):
 			pos.y -= randf_range(80.0, 160.0)   # los voladores aparecen en el aire
-	npcs[_next_id] = {"pos": pos, "vel": Vector2.ZERO, "hp": int(KINDS[kind].hp),
-		"kind": kind, "cool": 0.0, "jump_t": randf_range(0.0, 1.0), "block_cd": 0.0}
-	_next_id += 1
+	_insert_npc(kind, pos)
+
+
+## Bloque 1 "Mundo vivo": coloca un enemigo CERCA de la posición de `near`
+## (no en la superficie) — lo usa la presión ambiental cuando un jugador se
+## queda en una isla aérea o en el subsuelo profundo sin fortificar (las
+## zonas donde _spawn_one/surface_spawn nunca colocan enemigos).
+func spawn_near(kind: String, near: Node2D) -> void:
+	var w: Node2D = main.world
+	var pos := Vector2(near.position.x, near.position.y - 48.0)   # fallback
+	if bool(KINDS[kind].get("fly", false)):
+		pos = near.position + Vector2(randf_range(-80.0, 80.0), -randf_range(60.0, 140.0))
+	else:
+		var cx := floori(near.position.x / w.TILE)
+		var cy := floori(near.position.y / w.TILE)
+		for _attempt in 10:
+			var c := Vector2i(cx + randi_range(-6, 6), cy + randi_range(-6, 6))
+			if w.tiles.get(c, 0) == 0 and w.is_solid(c + Vector2i.DOWN):
+				pos = Vector2(c.x * w.TILE + w.TILE * 0.5, c.y * w.TILE + w.TILE * 0.5)
+				break
+	_insert_npc(kind, pos)
 
 
 ## Topo (Fase 10): busca una bolsa de aire subterránea cerca de x para
@@ -518,14 +779,24 @@ func _spawn_underground(x: int, w: Node2D) -> Vector2:
 func night_wave(night: int) -> bool:
 	if not multiplayer.is_server() or main.players.is_empty() or main.world == null:
 		return false
-	var count := mini(3 + night, WAVE_CAP - npcs.size())
+	# Tamaño de la oleada y cadencia del jefe: del MODO activo (capa de
+	# reglas, game_modes.gd) — "asedio" manda más enemigos que "survival".
+	var base := int(main.mode_cfg.get("wave_base", 3))
+	var step := int(main.mode_cfg.get("wave_step", 1))
+	var boss_every := int(main.mode_cfg.get("boss_every", BOSS_EVERY))
+	var count := mini(base + step * night, WAVE_CAP - _non_boss_count())
 	for i in maxi(count, 0):
 		_spawn_one(_roll_kind_night(night), main.players.values().pick_random())
-	if night % BOSS_EVERY == 0:
+	if night % boss_every == 0:
 		_spawn_one(main.run_boss_kind, main.players.values().pick_random())
 	if night % 2 == 1:
 		var px := floori(main.players.values().pick_random().position.x / main.world.TILE)
-		main.world.spawn_nest(px)
+		var nc: Vector2i = main.world.spawn_nest(px)
+		if nc.x >= 0:
+			# Avisar dónde palpita el nido (dar contrajuego es la regla),
+			# DEMORADO unos segundos para no pisar el toast de "¡Noche N!"
+			get_tree().create_timer(4.0).timeout.connect(func():
+				main._broadcast_toast("🕳️ Un nido palpita bajo tierra cerca de x=%d — destrúyelo" % nc.x))
 	return count > 0
 
 
@@ -541,8 +812,49 @@ func _on_floor(n: Dictionary, w: Node2D) -> bool:
 	return false
 
 
+## Locomoción de CAMINAR (rediseño "no todos saltan"): avanza en horizontal
+## hacia el jugador a velocidad constante — SIN el rebote del slime. Da un
+## brinco CORTO solo si un escalón de terreno le cierra el paso, para no
+## quedarse trabado. La gravedad la aplica el llamador (igual que la rama de
+## salto). `jump_t` se reusa como temporizador del deambular.
+func _walk_step(n: Dictionary, target: Node2D, best: float, spd: float, w: Node2D) -> void:
+	if target != null and best < CHASE_RANGE * 1.4:
+		n.vel.x = signf(target.position.x - n.pos.x) * spd
+	elif n.jump_t <= 0.0:
+		n.jump_t = randf_range(1.2, 2.6)
+		n.vel.x = [-1.0, 1.0].pick_random() * spd * 0.5
+	if _on_floor(n, w) and _step_blocked(n, w):
+		n.vel.y = -300.0
+
+
+## ¿Hay un escalón sólido en la columna vecina, a la altura de los pies? (para
+## el auto-step de los que caminan — un brinco corto, no el rebote del slime).
+func _step_blocked(n: Dictionary, w: Node2D) -> bool:
+	if absf(n.vel.x) < 1.0:
+		return false
+	var ahead := floori(n.pos.x / w.TILE) + int(signf(n.vel.x))
+	var foot := floori((n.pos.y + SIZE.y * 0.5 - 3.0) / w.TILE)
+	return w.is_solid(Vector2i(ahead, foot))
+
+
 func _move(n: Dictionary, delta: float, w: Node2D) -> void:
-	n.pos.x += n.vel.x * delta
+	# Bloque 4 "Bestiario vivo": el "espectro" (ghost) ATRAVIESA los muros —
+	# flota hacia el jugador sin colisionar (anti-turtling: las murallas no
+	# lo frenan). Solo se le acota a los límites del mundo.
+	if bool(_kind_of(n).get("ghost", false)):
+		n.pos += n.vel * delta
+		n.pos.x = clampf(n.pos.x, 16.0, w.W * w.TILE - 16.0)
+		n.pos.y = clampf(n.pos.y, 16.0, w.H * w.TILE - 16.0)
+		return
+	var dx: float = n.vel.x * delta
+	# Bloque 2 "Progresión elemental": los lagos del subsuelo profundo
+	# también ralentizan a los NPCs terrestres, igual que al jugador. Se
+	# escala el desplazamiento del frame (dx), no vel.x: vel.x persiste
+	# entre frames (se fija al saltar/perseguir) y mutarlo decaería sin fin.
+	var feet_tile := Vector2i(floori(n.pos.x / w.TILE), floori(n.pos.y / w.TILE))
+	if w.tiles.get(feet_tile, 0) == w.T_WATER:
+		dx *= WATER_SLOW
+	n.pos.x += dx
 	_resolve(n, 0, w)
 	n.pos.y += n.vel.y * delta
 	_resolve(n, 1, w)
@@ -604,7 +916,9 @@ func _do_hit(id: int, attacker: int) -> void:
 	var p: Node2D = main.players.get(attacker)
 	if p == null or p.position.distance_to(npcs[id].pos) > HIT_REACH:
 		return
-	npcs[id].hp -= main.get_attack_damage(attacker)   # espada, no pico
+	# Bloque 4: el "coracero" (armor) amortigua cada golpe (mínimo 1 de daño)
+	var dmg := maxi(1, main.get_attack_damage(attacker) - int(_kind_of(npcs[id]).get("armor", 0)))
+	npcs[id].hp -= dmg                        # espada, no pico
 	if npcs[id].hp <= 0:
 		var k := _kind_of(npcs[id])
 		var kind := str(npcs[id].kind)
@@ -613,6 +927,9 @@ func _do_hit(id: int, attacker: int) -> void:
 		main.count_kill(kind)                 # estadística de la run (Fase 9)
 		for i in int(k.ore):                  # botín según la variante (KINDS)
 			main.add_item(attacker, "ore")
+		var drop := str(k.get("drop", ""))    # Bloque 4: material de bioma
+		if drop != "":
+			main.add_item(attacker, drop)
 		main.add_coins(attacker, int(k.coins))   # MONETIZACIÓN: Núcleos
 	elif main.world != null and main.world.fx != null:
 		main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)   # flash de golpe
@@ -625,7 +942,8 @@ func _do_hit(id: int, attacker: int) -> void:
 func damage_npc(id: int, dmg: int) -> void:
 	if not npcs.has(id):
 		return
-	npcs[id].hp -= dmg
+	# Bloque 4: el blindaje del "coracero" también amortigua el daño ambiental
+	npcs[id].hp -= maxi(1, dmg - int(_kind_of(npcs[id]).get("armor", 0)))
 	if npcs[id].hp <= 0:
 		var k := _kind_of(npcs[id])
 		var kind := str(npcs[id].kind)
@@ -637,6 +955,9 @@ func damage_npc(id: int, dmg: int) -> void:
 		if nearest != -1:
 			for i in int(k.ore):
 				main.add_item(nearest, "ore")
+			var drop := str(k.get("drop", ""))   # Bloque 4: material de bioma
+			if drop != "":
+				main.add_item(nearest, drop)
 			main.add_coins(nearest, int(k.coins))
 	elif main.world != null and main.world.fx != null:
 		main.world.fx.burst(npcs[id].pos, Color(1, 1, 1), 5, 120.0)
@@ -711,6 +1032,25 @@ func _nest_spawn_fx(pos: Vector2) -> void:
 		Sfx.play("invasion")
 
 
+# FX cosmético del pulso de cura del "sanador" (Bloque 4): anillo verde
+# expansivo + chispas en su posición. El estado real (hp curado) viaja por
+# sync_npcs; esto es solo el telegraph para que se LEA quién cura a la horda.
+@rpc("authority", "call_remote", "unreliable")
+func heal_fx(pos: Vector2) -> void:
+	_heal_fx(pos)
+
+
+func _heal_fx(pos: Vector2) -> void:
+	if main.world != null and main.world.fx != null:
+		main.world.fx.ring(pos, HEAL_RADIUS, Color(0.3, 0.9, 0.55, 0.8))
+		main.world.fx.burst(pos, Color("8af0b0"), 10, 120.0)
+	# Bloque 5: brillo audible cerca del jugador local — oír que sanan a la
+	# horda avisa de que conviene matar al sanador primero (cosmético).
+	var me: Node2D = main.players.get(multiplayer.get_unique_id())
+	if me != null and me.position.distance_to(pos) < 700.0:
+		Sfx.play("cura")
+
+
 func _nearest_player(pos: Vector2) -> int:
 	var best := 1e9
 	var best_id := -1
@@ -732,7 +1072,8 @@ func sync_npcs(snap: Dictionary) -> void:
 	var fresh := {}
 	for id: int in snap:
 		var s: Array = snap[id]
-		fresh[id] = {"pos": s[0], "kind": s[1], "ratio": s[2]}
+		fresh[id] = {"pos": s[0], "kind": s[1], "ratio": s[2],
+			"st": (s[3] if s.size() > 3 else 0)}
 	for id: int in npcs:
 		if main.world == null or main.world.fx == null:
 			break

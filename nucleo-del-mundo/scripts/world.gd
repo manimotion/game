@@ -17,9 +17,10 @@ const FxScript := preload("res://scripts/fx.gd")
 
 const TILE := 32
 const CHUNK := 16             # tiles por lado de chunk (GDD §2.1)
-const W := 160                # 160 * 32 = 5120 px
-const H := 60                 # 60 * 32  = 1920 px
-const SKY_ROWS := 14
+const W := 200                # 200 * 32 = 6400 px
+const H := 90                 # 90 * 32  = 2880 px
+const SKY_ROWS := 24           # cielo ampliado: más espacio para el bioma aéreo
+const DEEP_ROWS := 12          # últimas filas antes del bedrock: bioma subterráneo profundo
 const VIEW_R := 2             # radio de chunks visibles
 const UNLOAD_R := 4           # radio de descarga
 
@@ -35,15 +36,34 @@ const T_CAMPFIRE := 8         # fogata — respawn + regen, no sólida (Fase 7)
 const T_SPIKES := 9           # trampa de pinchos — daña NPCs por contacto (Fase 8)
 const T_TOWER := 10           # torre de flechas — sólida, dispara sola (Fase 8)
 const T_NEST := 11            # nido — sólido; si no se destruye, escupe enemigos (Fase 10)
+const T_CRYSTAL := 12         # cristal — recurso de los biomas aéreo/profundo (sólido)
+const T_WATER := 13           # agua — no sólida, decorativa, ralentiza (Bloque 1 "Mundo vivo")
+const T_FEATHER := 14         # pluma — bioma aéreo, sólido (Bloque 1)
+const T_AETHER := 15          # esencia — bioma aéreo, núcleo raro, sólido (Bloque 1)
+const T_DIAMOND := 16         # diamante — bioma profundo, núcleo raro, sólido (Bloque 1)
+const T_EMBER := 17           # ascua — bioma profundo, junto a vetas de agua, sólido (Bloque 1)
+const T_TOWER_MEGA := 18      # torre mega — craftable con minerales, sólida (Bloque 2)
+# Bloque 3 "Mundo vivo II" — exploración y eventos:
+const T_RAIL := 19           # vía de tren abandonada — no sólida; al minar da madera x2
+const T_CHEST := 20          # cofre de recursos — sólido; al romperlo suelta botín por bioma
+const T_SKULL := 21          # calavera (estilo Halo) — sólida; al excavarla, efecto aleatorio
 
 # GDD §3.2: HP y drop por tipo de tile
 const HP := {T_DIRT: 40, T_STONE: 100, T_ORE: 140, T_WOOD: 60, T_LEAF: 20,
-	T_WALL: 400, T_CAMPFIRE: 200, T_SPIKES: 120, T_TOWER: 250, T_NEST: 150}
+	T_WALL: 400, T_CAMPFIRE: 200, T_SPIKES: 120, T_TOWER: 250, T_NEST: 150, T_CRYSTAL: 160,
+	T_FEATHER: 120, T_AETHER: 180, T_DIAMOND: 220, T_EMBER: 160, T_TOWER_MEGA: 400,
+	T_RAIL: 50, T_CHEST: 60, T_SKULL: 140}
 const DROPS := {T_DIRT: "dirt", T_STONE: "stone", T_ORE: "ore", T_WOOD: "wood",
-	T_WALL: "muralla", T_CAMPFIRE: "fogata", T_SPIKES: "trampa", T_TOWER: "torre"}
+	T_WALL: "muralla", T_CAMPFIRE: "fogata", T_SPIKES: "trampa", T_TOWER: "torre", T_CRYSTAL: "cristal",
+	T_FEATHER: "pluma", T_AETHER: "esencia", T_DIAMOND: "diamante", T_EMBER: "ascua", T_TOWER_MEGA: "torre_mega"}
 const ITEM_TILE := {"dirt": T_DIRT, "stone": T_STONE, "wood": T_WOOD,
-	"muralla": T_WALL, "fogata": T_CAMPFIRE, "trampa": T_SPIKES, "torre": T_TOWER}
-const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true, T_TOWER: true, T_NEST: true}
+	"muralla": T_WALL, "fogata": T_CAMPFIRE, "trampa": T_SPIKES, "torre": T_TOWER, "torre_mega": T_TOWER_MEGA}
+const SOLID := {T_DIRT: true, T_STONE: true, T_ORE: true, T_BEDROCK: true, T_WALL: true, T_TOWER: true, T_NEST: true, T_CRYSTAL: true,
+	T_FEATHER: true, T_AETHER: true, T_DIAMOND: true, T_EMBER: true, T_TOWER_MEGA: true,
+	T_CHEST: true, T_SKULL: true}
+
+# Bloque 3: cuánta madera da una vía de tren (recompensa de exploración x2)
+const RAIL_WOOD := 2
 
 const REACH := 200.0          # alcance validado por el servidor
 
@@ -114,23 +134,50 @@ func generate() -> void:
 				continue
 			var t := T_DIRT
 			if depth > 5:
-				t = T_STONE
-				if noise.get_noise_2d(float(x) * 3.0, float(y) * 3.0) > 0.42:
-					t = T_ORE
+				var ore_noise := noise.get_noise_2d(float(x) * 3.0, float(y) * 3.0)
+				if y >= H - 1 - DEEP_ROWS:
+					# Bioma subterráneo profundo: vetas más densas que en la
+					# piedra normal, con diamante/cristal/ascua en su núcleo
+					# más rico (Bloque 1 "Mundo vivo").
+					if ore_noise > 0.60:
+						t = T_DIAMOND
+					elif ore_noise > 0.55:
+						t = T_CRYSTAL
+					elif ore_noise > 0.40:
+						t = T_EMBER
+					elif ore_noise > 0.25:
+						t = T_ORE
+					else:
+						t = T_STONE
+				else:
+					t = T_STONE
+					if ore_noise > 0.42:
+						t = T_ORE
 			tiles[Vector2i(x, y)] = t
 		tiles[Vector2i(x, H - 1)] = T_BEDROCK
-		# Árboles (§8 — fuente de madera para crafting)
+		# Árboles (§8 — fuente de madera para crafting; ver también
+		# grow_trees(), que repone este recurso cada amanecer)
 		if x > 2 and x < W - 3 and randf() < 0.10:
-			_plant_tree(x, surface)
+			var t_changes := {}
+			_plant_tree(x, surface, t_changes)
+			for c: Vector2i in t_changes:
+				tiles[c] = t_changes[c]
 	_spawn_islands()
+	_spawn_lakes()
+	# Bloque 3 "Mundo vivo II" — exploración: vías de tren (madera x2),
+	# cofres de recursos por bioma y calaveras estilo Halo enterradas.
+	_spawn_rails()
+	_spawn_chests()
+	_spawn_skulls()
 
 
 ## Islas flotantes: óvalos de tierra (césped arriba) con núcleo de
-## piedra y mineral extra — recompensa por construir hacia arriba.
+## piedra, mineral y cristal — bioma aéreo, recompensa por construir
+## hacia arriba (el cielo ampliado permite más islas que antes).
 func _spawn_islands() -> void:
-	for i in randi_range(4, 6):
+	for i in randi_range(7, 11):
 		var cx := randi_range(10, W - 11)
-		var cy := randi_range(4, SKY_ROWS - 6)
+		var cy := randi_range(3, SKY_ROWS - 5)
 		var rw := randi_range(4, 7)
 		var rh := randi_range(2, 3)
 		for dx in range(-rw, rw + 1):
@@ -142,19 +189,179 @@ func _spawn_islands() -> void:
 				var c := Vector2i(cx + dx, cy + dy)
 				if dy <= 0:
 					tiles[c] = T_DIRT
+				elif randf() < 0.10:
+					tiles[c] = T_AETHER
+				elif randf() < 0.12:
+					tiles[c] = T_CRYSTAL
+				elif randf() < 0.25:
+					tiles[c] = T_FEATHER
 				else:
 					tiles[c] = T_ORE if randf() < 0.30 else T_STONE
+		# Bloque 3: ~55% de las islas tienen un árbol en su cima (madera en
+		# el cielo — antes solo crecían en la superficie). La copa cae sobre
+		# aire (encima de la isla), así que _plant_tree no pisa nada sólido.
+		if randf() < 0.55:
+			var top := cy - rh   # fila de tierra más alta de la isla en la columna cx
+			if tiles.get(Vector2i(cx, top), 0) == T_DIRT:
+				var tree := {}
+				_plant_tree(cx, top, tree)
+				for c: Vector2i in tree:
+					tiles[c] = tree[c]
 
 
-func _plant_tree(x: int, surface: int) -> void:
+## Vías de tren abandonadas (Bloque 3): galerías mineras EXCAVADAS en el
+## subsuelo con un tendido de T_RAIL sobre su piso. Minar la vía da madera
+## x2 — un botín de exploración que premia bajar al subsuelo. Cava el raíl
+## + 2 de aire de techo y asegura piso sólido; no toca el bedrock.
+func _spawn_rails() -> void:
+	for _i in randi_range(3, 5):
+		var sx := randi_range(4, W - 20)
+		var sy := randi_range(SKY_ROWS + 12, H - 4)
+		var length := randi_range(8, 16)
+		for k in length:
+			var c := Vector2i(sx + k, sy)
+			if c.x >= W - 2:
+				break
+			if tiles.get(c, 0) == T_BEDROCK:
+				continue
+			# Galería: piso sólido + raíl + 2 de aire de techo (mina abandonada)
+			var below := c + Vector2i(0, 1)
+			if not SOLID.has(tiles.get(below, 0)):
+				tiles[below] = T_STONE
+			tiles[c] = T_RAIL
+			tiles[c + Vector2i(0, -1)] = 0
+			tiles[c + Vector2i(0, -2)] = 0
+
+
+## Cofres de recursos (Bloque 3): repartidos por los tres ambientes. Para
+## cada uno elige una columna y posa el cofre sobre el primer suelo sólido
+## que encuentre por debajo de una banda objetivo (cielo/superficie/
+## subsuelo), tallando el hueco si hace falta. El botín lo decide
+## main.open_chest según el bioma de su posición.
+func _spawn_chests() -> void:
+	# (banda_min, banda_max) en filas para repartir por zonas
+	var bands := [
+		Vector2i(3, SKY_ROWS - 3),                       # cielo (islas)
+		Vector2i(SKY_ROWS, SKY_ROWS + 6),                # superficie
+		Vector2i(SKY_ROWS + 12, H - 1 - DEEP_ROWS),      # cueva
+		Vector2i(H - 1 - DEEP_ROWS, H - 3),              # profundo
+	]
+	for band: Vector2i in bands:
+		for _c in 2:   # ~2 cofres por banda
+			for _attempt in 25:
+				var x := randi_range(3, W - 4)
+				var floor_y := -1
+				for y in range(band.x, band.y + 1):
+					if SOLID.has(tiles.get(Vector2i(x, y), 0)) and tiles.get(Vector2i(x, y - 1), 0) == 0:
+						floor_y = y - 1
+						break
+				if floor_y < 0:
+					continue
+				tiles[Vector2i(x, floor_y)] = T_CHEST
+				break
+
+
+## Calaveras estilo Halo (Bloque 3): enterradas dentro de la roca del
+## subsuelo (ocultas hasta excavarlas). Todas se ven igual: el jugador
+## no sabe si es buena o mala hasta romperla (main.excavate_skull elige
+## el efecto al azar). Reemplaza tiles sólidos NO valiosos por T_SKULL.
+func _spawn_skulls() -> void:
+	var placed := 0
+	for _attempt in 80:
+		if placed >= 7:
+			break
+		var x := randi_range(3, W - 4)
+		var y := randi_range(SKY_ROWS + 8, H - 3)
+		var c := Vector2i(x, y)
+		var t: int = tiles.get(c, 0)
+		if t != T_STONE and t != T_DIRT:
+			continue   # solo enterrada en roca/tierra común (no pisa mineral)
+		tiles[c] = T_SKULL
+		placed += 1
+
+
+## Lagos del subsuelo profundo (Bloque 2 "Progresión elemental"): a
+## diferencia del ruido disperso anterior, esto TALLA 2-4 charcos grandes
+## y CONTENIDOS de T_WATER (blobs conexos de 18-40 tiles) dentro de la
+## banda profunda. Sirven de barrera/ralentización tanto para el jugador
+## (player._simulate_step) como para NPCs terrestres (npc_manager._move):
+## cruzar un lago cuesta tiempo, dando ventaja a torres/pinchos cercanos.
+func _spawn_lakes() -> void:
+	for _i in randi_range(2, 4):
+		var cx := randi_range(8, W - 9)
+		var cy := randi_range(H - DEEP_ROWS, H - 3)
+		var size := randi_range(18, 40)
+		var queue: Array[Vector2i] = [Vector2i(cx, cy)]
+		var filled: Dictionary = {}
+		while not queue.is_empty() and filled.size() < size:
+			var c: Vector2i = queue.pop_front()
+			if filled.has(c) or c.y < H - 1 - DEEP_ROWS or c.y > H - 2:
+				continue
+			filled[c] = true
+			tiles[c] = T_WATER
+			for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var nb: Vector2i = c + d
+				if not filled.has(nb) and randf() < 0.85:
+					queue.append(nb)
+
+
+## Calcula las coordenadas de un árbol nuevo (tronco + copa) y las
+## escribe en `changes` (coord -> tipo de tile). NO toca `tiles`: cada
+## llamador decide cómo aplicarlas (generate() las copia directo;
+## grow_trees() las aplica con _set_tile + apply_changes.rpc).
+func _plant_tree(x: int, surface: int, changes: Dictionary) -> void:
 	var height := randi_range(4, 6)
 	for h in height:
-		tiles[Vector2i(x, surface - 1 - h)] = T_WOOD
+		changes[Vector2i(x, surface - 1 - h)] = T_WOOD
 	for lx in range(-1, 2):
 		for ly in range(2):
 			var c := Vector2i(x + lx, surface - height - 1 - ly)
-			if tiles.get(c, 0) == 0:
-				tiles[c] = T_LEAF
+			if tiles.get(c, 0) == 0 and not changes.has(c):
+				changes[c] = T_LEAF
+
+
+## Y del tile sólido más alto con aire encima en la columna x (la
+## "superficie" natural, mismo sentido que `surface` en generate());
+## -1 si no encuentra ninguno entre SKY_ROWS y el fondo.
+func _surface_y(x: int) -> int:
+	for y in range(SKY_ROWS, H - 1):
+		if SOLID.has(tiles.get(Vector2i(x, y), 0)) and tiles.get(Vector2i(x, y - 1), 0) == 0:
+			return y
+	return -1
+
+
+## Crecimiento diario de árboles (GDD — la madera es un recurso
+## limitado): al amanecer, main._set_phase(false) llama esto para
+## reponer el bosque. Intenta plantar hasta `max_new` árboles en
+## superficie despejada y sincroniza los tiles nuevos a todos los
+## peers (mismo patrón que meteor_strike/apply_changes). Servidor-only.
+func grow_trees(attempts: int = 8, max_new: int = 3) -> void:
+	if not multiplayer.is_server():
+		return
+	var changes := {}
+	var planted := 0
+	for _i in attempts:
+		if planted >= max_new:
+			break
+		var x := randi_range(3, W - 4)
+		var surface := _surface_y(x)
+		if surface < 0 or tiles.get(Vector2i(x, surface), 0) != T_DIRT:
+			continue
+		var clear := true
+		for h in 8:   # tronco (hasta 6) + copa (2 filas extra de margen)
+			var c := Vector2i(x, surface - 1 - h)
+			if tiles.get(c, 0) != 0 or changes.has(c):
+				clear = false
+				break
+		if not clear:
+			continue
+		_plant_tree(x, surface, changes)
+		planted += 1
+	if changes.is_empty():
+		return
+	for c: Vector2i in changes:
+		_set_tile(c, changes[c])
+	apply_changes.rpc(changes)
 
 
 func surface_spawn(x: int) -> Vector2:
@@ -172,23 +379,43 @@ func surface_spawn(x: int) -> Vector2:
 ## que los enemigos que escupa tengan espacio. Vector2i(-1,-1) si falla.
 func spawn_nest(near_x: int) -> Vector2i:
 	near_x = clampi(near_x, 2, W - 3)
+	# Intentos aleatorios (variedad); si todos fallan, BARRIDO determinista
+	# en espiral desde near_x (el nido SIEMPRE aparece si hay un hueco viable
+	# — antes 20 tiradas con mala suerte lo dejaban sin sembrar).
 	for _attempt in 20:
 		var x := clampi(near_x + randi_range(-8, 8), 2, W - 3)
 		var y := randi_range(SKY_ROWS + 6, H - 3)
-		var c := Vector2i(x, y)
-		var t: int = tiles.get(c, 0)
-		if not SOLID.has(t) or t == T_NEST or t == T_BEDROCK:
-			continue
-		var has_air := false
-		for d in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
-			if not SOLID.has(tiles.get(c + d, 0)):
-				has_air = true
-				break
-		if has_air:
-			_set_tile(c, T_NEST)
-			apply_tile.rpc(c, T_NEST)
-			return c
+		if _try_place_nest(Vector2i(x, y)):
+			return Vector2i(x, y)
+	for dx in range(0, W):
+		for sgn: int in [1, -1]:
+			var x: int = near_x + dx * sgn
+			if x < 2 or x > W - 3:
+				continue
+			for y in range(SKY_ROWS + 6, H - 2):
+				if _try_place_nest(Vector2i(x, y)):
+					return Vector2i(x, y)
+			if dx == 0:
+				break   # near_x solo una vez
 	return Vector2i(-1, -1)
+
+
+## ¿La celda es sólida (no nido/bedrock) y tiene una cara de aire? Entonces
+## coloca un T_NEST ahí. Helper de spawn_nest (aleatorio + barrido).
+func _try_place_nest(c: Vector2i) -> bool:
+	var t: int = tiles.get(c, 0)
+	if not SOLID.has(t) or t == T_NEST or t == T_BEDROCK:
+		return false
+	var has_air := false
+	for d in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		if not SOLID.has(tiles.get(c + d, 0)):
+			has_air = true
+			break
+	if not has_air:
+		return false
+	_set_tile(c, T_NEST)
+	apply_tile.rpc(c, T_NEST)
+	return true
 
 
 # -------------------------------------------------------------
@@ -421,6 +648,13 @@ func _do_hit(coord: Vector2i, miner_id: int) -> void:
 		elif t == T_NEST:   # Fase 10: destruir un nido da una recompensa extra
 			get_parent().add_coins(miner_id, get_parent().COIN_NEST)
 			get_parent().on_nest_destroyed(coord)
+		elif t == T_RAIL:   # Bloque 3: las vías abandonadas dan madera x2
+			for _i in RAIL_WOOD:
+				get_parent().add_item(miner_id, "wood")
+		elif t == T_CHEST:   # Bloque 3: cofre — botín por bioma
+			get_parent().open_chest(miner_id, coord)
+		elif t == T_SKULL:   # Bloque 3: calavera — efecto aleatorio (bueno/malo)
+			get_parent().excavate_skull(miner_id, coord)
 	else:
 		damage[coord] = hp_left
 		damage_ratio[coord] = float(hp_left) / HP[t]

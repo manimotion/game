@@ -41,6 +41,14 @@ func _ready() -> void:
 	_streams["derrota"] = _make_jingle([392.0, 329.63, 261.63, 196.0], 0.22, 0.4)     # G E C G desc.
 	# Fase 10: enemigos especiales (taladro, embestidor, nidos)
 	_streams["embestida"] = _make(80.0, 320.0, 0.18, 0.55, true)  # carga del embistedor
+	_streams["fusion"] = _make(180.0, 540.0, 0.22, 0.45, false)   # dos slimes se fusionan
+	_streams["nido"] = _make(95.0, 50.0, 0.5, 0.5, true)          # un nido aparece/palpita
+	# Bloque 1 "Mundo vivo": chapoteo al entrar al agua de los ríos profundos
+	_streams["agua"] = _make(1400.0, 350.0, 0.10, 0.30, true)
+	# Bloque 5 "Identidad visual y sonora": botín y eventos de exploración
+	_streams["cofre"] = _make_jingle([659.25, 783.99, 1046.5], 0.10, 0.42)   # cofre/botín: arpegio que sube
+	_streams["cura"] = _make_jingle([783.99, 987.77, 1318.5], 0.09, 0.30)    # calavera vital / sanación: brillo suave
+	_streams["maldicion"] = _make(330.0, 70.0, 0.5, 0.55, true)              # calavera mala: presagio grave
 	for i in VOICES:
 		var p := AudioStreamPlayer.new()
 		add_child(p)

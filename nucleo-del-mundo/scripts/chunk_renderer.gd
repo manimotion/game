@@ -51,6 +51,13 @@ func _draw() -> void:
 			var air_above: bool = world.tiles.get(coord + Vector2i.UP, 0) == 0
 			var dark := clampf(float(coord.y - world.SKY_ROWS) / DEPTH_ROWS, 0.0, DEPTH_MAX)
 			var mod := Color(1.0 - dark, 1.0 - dark, 1.0 - dark)
+			# Tinte de bioma (Bloque 1 "Mundo vivo"): cielo frío/violeta,
+			# profundo cálido — para que ambos se "lean" distintos a simple
+			# vista además de por sus minerales propios.
+			if coord.y < world.SKY_ROWS:
+				mod *= Color(1.05, 1.02, 1.18)
+			elif coord.y >= world.H - 1 - world.DEEP_ROWS:
+				mod *= Color(1.25, 0.92, 0.8)
 			draw_texture_rect(Atlas.tile_tex(tt, coord, air_above), rect, false, mod)
 			# Fogata: aura cálida que PARPADEA (solo visual, Fase 7 pulida).
 			# El radio y la intensidad oscilan con el tiempo; de noche el

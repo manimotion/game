@@ -14,6 +14,11 @@ const DEADZONE := 0.22
 ## Vector de salida normalizado (-1..1 en cada eje).
 var output := Vector2.ZERO
 
+## Modo de control (ver main.control_mode / Ajustes): en PC se desactiva
+## para que el clic del ratón (emulate_touch_from_mouse) mine también en
+## la esquina inferior-izquierda en vez de quedar atrapado por el joystick.
+var enabled := true
+
 var _touch_index := -1
 var _origin := Vector2.ZERO
 var _knob_pos := Vector2.ZERO
@@ -25,6 +30,16 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE  # no bloquear botones de la UI
 
 
+## Activa/desactiva el joystick (modo móvil/PC). Desactivado: no captura
+## toques (deja pasar el clic a minar) y no se dibuja.
+func set_enabled(b: bool) -> void:
+	enabled = b
+	if not enabled:
+		_touch_index = -1
+		output = Vector2.ZERO
+		queue_redraw()
+
+
 ## Zona de activación: 45% izquierdo y 65% inferior de la pantalla.
 func _in_zone(p: Vector2) -> bool:
 	var vs := get_viewport_rect().size
@@ -32,6 +47,8 @@ func _in_zone(p: Vector2) -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	if not enabled:
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed and _touch_index == -1 and _in_zone(event.position):
 			_touch_index = event.index

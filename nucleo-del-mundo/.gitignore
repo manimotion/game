@@ -1,2 +1,8 @@
 # Caché del editor de Godot (se regenera solo)
 .godot/
+
+# Plantillas .aar de Android de Godot: artefactos pesados (>50/100 MB) que
+# exceden el límite de GitHub. Se regeneran al instalar la plantilla de
+# compilación de Android (Proyecto → Instalar plantilla de compilación).
+android/build/libs/
+*.aar
