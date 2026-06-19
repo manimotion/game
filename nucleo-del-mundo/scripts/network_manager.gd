@@ -33,6 +33,21 @@ func host_game() -> Error:
 	return OK
 
 
+## Modo SOLO/offline (web e itch.io, o jugar sin red): OfflineMultiplayerPeer
+## hace que `is_server()` sea true y `get_unique_id()` 1 SIN abrir puertos —
+## toda la lógica server-authoritative corre local, los rpc a remotos no-opean.
+## OBLIGATORIO en web: ENet no está disponible en el export HTML5.
+func host_offline() -> Error:
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	return OK
+
+
+## ¿Estamos en un export web (navegador)? En web no hay ENet: el juego cae a
+## modo SOLO (host_offline) y oculta la unión por IP del lobby.
+func is_web() -> bool:
+	return OS.has_feature("web")
+
+
 ## Se conecta a un host existente por IP (misma red WiFi).
 func join_game(ip: String) -> Error:
 	var peer := ENetMultiplayerPeer.new()

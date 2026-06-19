@@ -90,6 +90,7 @@ const STRINGS_EN := {
 	"t_meteor_hit_fmt": "☄️ Impact! The meteor left ore at x=%d",
 	"t_host_err": "❌ Error creating game (port in use?)",
 	"t_created_fmt": "🟢 Game created — share your IP: %s",
+	"t_started_solo": "🟢 Game started!",
 	"t_write_ip": "Type the host IP",
 	"t_bad_ip": "❌ Invalid address",
 	"t_connecting_fmt": "Connecting to %s...",
@@ -591,7 +592,10 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	_run_over = false
 	run_kills = 0
 	run_boss_kind = BOSS_KINDS.pick_random()
-	if Net.host_game() != OK:
+	# En WEB (itch.io) no hay ENet: se juega en SOLO con un peer offline. En
+	# escritorio/móvil se hospeda por ENet (LAN/IP) como siempre.
+	var err := Net.host_offline() if Net.is_web() else Net.host_game()
+	if err != OK:
 		_show_toast(L("t_host_err", "❌ Error al crear la partida (¿puerto ocupado?)"))
 		return
 	_start_game()
@@ -604,7 +608,11 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	_spawn_player(1, world.surface_spawn(randi_range(4, world.W - 5)), str(prof.skin), my_name)
 	_apply_inventory(inventories[1])
 	_apply_profile(prof)
-	_show_toast(L("t_created_fmt", "🟢 Partida creada — comparte tu IP: %s") % Net.local_ip())
+	# En web no hay IP que compartir: aviso de inicio sin IP.
+	if Net.is_web():
+		_show_toast(L("t_started_solo", "🟢 ¡Partida iniciada!"))
+	else:
+		_show_toast(L("t_created_fmt", "🟢 Partida creada — comparte tu IP: %s") % Net.local_ip())
 	_broadcast_boss_announcement(run_boss_kind)
 
 

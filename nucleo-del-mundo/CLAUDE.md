@@ -198,6 +198,14 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   `main.language = "es"` al inicio (la máquina de CI puede ser EN y rompería
   los checks en español); TEST 48 valida el inglés explícito.
 - `scripts/network_manager.gd` — autoload `Net`. Host/join ENet, señales de conexión.
+  WEB/itch.io: `is_web()` (`OS.has_feature("web")`) y `host_offline()`
+  (`OfflineMultiplayerPeer`, `is_server()`=true sin abrir puertos) — en el
+  export HTML5 NO hay ENet, así que `main._host` cae a modo SOLO en web y
+  `ui_builder` oculta la unión por IP del lobby. El multijugador LAN sigue
+  intacto en escritorio/Android. Pasos de export en `PUBLICAR_WEB.md`; el
+  preset "Web" está en `export_presets.cfg` (`thread_support=false` para
+  itch.io sin cabeceras de SharedArrayBuffer); la salida va a `export/`
+  (gitignorada).
 - `scripts/sfx.gd` — autoload `Sfx`. SFX y música de fondo procedurales (WAV sintetizado
   al arrancar; la música es un loop suave Am–F–C–G, omitida en headless). 100% local y
   cosmético: nunca viaja por red ni toca estado del juego. Incluye jingles

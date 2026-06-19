@@ -6,3 +6,7 @@
 # compilación de Android (Proyecto → Instalar plantilla de compilación).
 android/build/libs/
 *.aar
+
+# Salida de exports (web/desktop): artefactos de build, no van a git.
+# Para itch.io subes el zip de export/web/ por separado.
+export/

@@ -126,19 +126,22 @@ static func build_lobby(m: Node2D) -> void:
 		cont_btn.pressed.connect(func(): m._host(true))
 		box.add_child(cont_btn)
 
-	box.add_child(HSeparator.new())
-
+	# Unirse por IP: solo en escritorio/móvil (ENet). En WEB (itch.io) no hay
+	# ENet, así que el lobby se queda con los modos en SOLO y se oculta esto.
 	m._ip_input = LineEdit.new()
-	m._ip_input.text = "127.0.0.1"
-	m._ip_input.placeholder_text = m.L("ip_ph", "IP del host (ej: 192.168.1.50)")
-	m._ip_input.custom_minimum_size.y = 48
-	box.add_child(m._ip_input)
+	if not Net.is_web():
+		box.add_child(HSeparator.new())
 
-	var join_btn := Button.new()
-	join_btn.text = m.L("join", "🔗 Unirse a partida")
-	join_btn.custom_minimum_size.y = 52
-	join_btn.pressed.connect(m._on_join_pressed)
-	box.add_child(join_btn)
+		m._ip_input.text = "127.0.0.1"
+		m._ip_input.placeholder_text = m.L("ip_ph", "IP del host (ej: 192.168.1.50)")
+		m._ip_input.custom_minimum_size.y = 48
+		box.add_child(m._ip_input)
+
+		var join_btn := Button.new()
+		join_btn.text = m.L("join", "🔗 Unirse a partida")
+		join_btn.custom_minimum_size.y = 52
+		join_btn.pressed.connect(m._on_join_pressed)
+		box.add_child(join_btn)
 
 	box.add_child(HSeparator.new())
 

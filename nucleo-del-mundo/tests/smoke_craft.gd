@@ -1579,6 +1579,19 @@ func _ready() -> void:
 	main.set_language("auto")
 	_check("set_language('auto') vuelve al idioma del dispositivo", main.language == "auto")
 
+	# ---- TEST 49: modo SOLO/offline para el export web (itch.io) ----
+	# En web no hay ENet: Net.host_offline() usa OfflineMultiplayerPeer.
+	_check("Net soporta modo offline para web (host_offline + is_web)",
+		Net.has_method("host_offline") and Net.has_method("is_web"))
+	_check("is_web() es false en escritorio/headless (usa ENet normal)", not Net.is_web())
+	# Funcional: un OfflineMultiplayerPeer hace is_server()=true sin abrir red.
+	var saved_peer := multiplayer.multiplayer_peer
+	Net.host_offline()
+	print("[49] offline -> is_server:", multiplayer.is_server(), " uid:", multiplayer.get_unique_id())
+	_check("host_offline() hace is_server()=true y uid=1 sin red (juego en solo)",
+		multiplayer.is_server() and multiplayer.get_unique_id() == 1)
+	multiplayer.multiplayer_peer = saved_peer
+
 	print("")
 	if _fail == 0:
 		print("=== TODO OK: la lógica de crafteo (_do_craft) funciona correctamente ===")
