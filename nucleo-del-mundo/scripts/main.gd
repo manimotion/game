@@ -33,6 +33,110 @@ const SAVE_PATH := "user://nucleo_save.json.gz"
 # partida): por ahora solo el modo de control móvil/PC.
 const SETTINGS_PATH := "user://nucleo_settings.cfg"
 const CONTROL_MODES := ["auto", "movil", "pc"]
+const LANGS := ["auto", "es", "en"]
+
+# LOCALIZACIÓN ES/EN (per-device, en SETTINGS_PATH). El español es el texto
+# por DEFECTO en línea (no cambia nada si no traduces); el inglés vive aquí.
+# `L(clave, es_default)` devuelve el inglés si el idioma efectivo es "en" y la
+# clave existe; si no, el `es_default` que se pasa en cada sitio. Así se traduce
+# de forma incremental sin romper el español. Los textos de combate (toasts)
+# quedan en español por ahora — son transitorios.
+const STRINGS_EN := {
+	"subtitle": "Build by day. Survive by night.",
+	"name_ph": "Your name (saves your Cores & skins)",
+	"continue_save": "💾 Continue saved game",
+	"ip_ph": "Host IP (e.g. 192.168.1.50)",
+	"join": "🔗 Join game",
+	"host_suffix": "host",
+	"nights_fmt": "%d nights",
+	"endless": "endless",
+	"craft": "🛠️ Craft",
+	"shop": "🛒 Shop (skins)",
+	"craft_title": "🛠️ Craft (uses materials, NOT Cores)",
+	"shop_title_fmt": "🛒 Skin shop — you have 🪙 %d Cores",
+	"run_close": "Continue in free mode",
+	"settings_btn_lobby": "⚙️ Settings (controls / language)",
+	"settings_title": "⚙️ Settings",
+	"ctrl_sub": "How the game is controlled on this device:",
+	"ctrl_auto": "🔍 Automatic (per device)",
+	"ctrl_movil": "📱 Mobile — touch joystick",
+	"ctrl_pc": "🖥️ PC — keyboard (WASD/arrows) + mouse",
+	"hint_fmt": "Detected device: %s\nActive control: %s",
+	"dev_movil": "mobile (touchscreen)", "dev_pc": "PC (keyboard/mouse)",
+	"act_movil": "📱 touch joystick", "act_pc": "🖥️ keyboard (WASD/arrows) + mouse",
+	"lang_label": "🌐 Language / Idioma:",
+	"lang_auto": "Auto", "lang_es": "Español", "lang_en": "English",
+	"main_menu": "🏠 Main menu", "quit": "🚪 Quit game",
+	"create_suffix": "create",
+	"mode_survival_name": "Survival",
+	"mode_survival_desc": "Survive 7 nights. Dying at night ends the run.",
+	"mode_asedio_name": "Siege",
+	"mode_asedio_desc": "3 brutal nights, short days. The boss arrives the last night.",
+	"mode_sandbox_name": "Free Sandbox",
+	"mode_sandbox_desc": "Build with no goal. Your world is saved.",
+	# Etiquetas de equipo (herramientas) y estado del HUD
+	"tool_hand": "Hand", "weapon_fists": "Fists", "no_armor": "No armor",
+	"phase_night_fmt": "🌙 Night %d%s — %d:%02d", "phase_day_fmt": "☀️ Day %d — %d:%02d",
+	"run_victory": "🏆 VICTORY!", "run_defeat": "💀 RUN OVER",
+	"run_body_fmt": "🌙 Nights survived: %d\n⚔️ Enemies slain: %d\n📦 Resources gathered: %d\n🪙 Cores: %d",
+	"run_bonus_fmt": "\n✨ +%d victory bonus",
+	"craft_maxed_fmt": "✓ %s — max level",
+	"boss_run_fmt": "👹 This run's boss: %s — %s",
+	"boss_evolved_fmt": "🔥 The boss evolved! It's now: %s — %s",
+	# Mensajes (toasts). Se mantienen los emojis de prefijo (disparan sonido).
+	"t_conn_fail": "❌ Couldn't connect to host",
+	"t_dusk_fmt": "🌆 Night falls in %d s — get ready",
+	"t_meteor_warn_fmt": "☄️ Meteor incoming near x=%d! Move away",
+	"t_meteor_hit_fmt": "☄️ Impact! The meteor left ore at x=%d",
+	"t_host_err": "❌ Error creating game (port in use?)",
+	"t_created_fmt": "🟢 Game created — share your IP: %s",
+	"t_write_ip": "Type the host IP",
+	"t_bad_ip": "❌ Invalid address",
+	"t_connecting_fmt": "Connecting to %s...",
+	"t_connected": "🟢 Connected",
+	"t_have_fmt": "You already have: %s",
+	"t_first_make_fmt": "Craft first: %s",
+	"t_no_mats_fmt": "❌ Not enough materials for: %s",
+	"t_crafted_fmt": "🛠️ Crafted: %s",
+	"t_chest_fmt": "📦 Chest: %s",
+	"t_defeated_fmt": "⚔️ %s defeated!",
+	"t_no_coins_fmt": "❌ Not enough Cores for: %s (costs %d)",
+	"t_bought_skin_fmt": "🛒 Bought the skin %s!",
+	"t_fell": "💀 You fell! Respawning...",
+	"t_pressure_warn": "⚠️ Something stalks you... fortify or return to the surface",
+	"t_pres_sky": "🌬️ Something followed you up high...",
+	"t_pres_cave": "🦇 Don't linger in the dark too long...",
+	"t_pres_deep": "🔥 The core's heat wakes something nearby...",
+	"t_night_fmt": "🌙 Night %d! Hold until dawn",
+	"t_boss_arrive_fmt": "👹 %s has arrived! (Night %d)",
+	"t_dawn_fmt": "☀️ Dawn — you survived night %d",
+	"t_player_conn_fmt": "🟢 Player %d connected — host IP: %s",
+	"t_nest_fmt": "🕳️ A nest pulses underground near x=%d — destroy it",
+}
+const ITEM_NAMES_EN := {"dirt": "Dirt", "stone": "Stone", "wood": "Wood", "ore": "Ore",
+	"cristal": "Crystal", "muralla": "Wall", "fogata": "Campfire", "trampa": "Trap", "torre": "Tower",
+	"pluma": "Feather", "esencia": "Essence", "diamante": "Diamond", "ascua": "Ember",
+	"torre_mega": "Mega Tower"}
+# Nombres de equipo (herramientas) en inglés — por recipe_id.
+const RECIPE_NAMES_EN := {
+	"pico_madera": "Wooden Pickaxe", "pico_piedra": "Stone Pickaxe",
+	"pico_dorado": "Golden Pickaxe", "pico_cristal": "Crystal Pickaxe",
+	"espada_madera": "Wooden Sword", "espada_piedra": "Stone Sword",
+	"espada_dorada": "Golden Sword", "espada_diamante": "Diamond Sword",
+	"armadura_madera": "Wooden Armor", "armadura_piedra": "Stone Armor",
+	"armadura_dorada": "Golden Armor", "armadura_diamante": "Diamond Armor",
+	"muralla": "Wall", "fogata": "Campfire", "trampa": "Spike Trap",
+	"torre": "Arrow Tower", "torre_mega": "Mega Tower",
+}
+# Nombres y pistas de los jefes en inglés — por kind de npc_manager.KINDS.
+const BOSS_NAMES_EN := {"jefe": "Demon Boss", "jefe_murcielago": "Giant Bat",
+	"jefe_topo": "Mega Mole", "jefe_corredor": "Mega Runner"}
+const BOSS_HINTS_EN := {
+	"jefe": "breaks walls and enrages at low HP — reinforce your walls",
+	"jefe_murcielago": "flies and charges in a straight line — arrow towers are key",
+	"jefe_topo": "digs under your feet and hits your walls from below",
+	"jefe_corredor": "charges horizontally at high speed — don't stand in its path",
+}
 
 const ITEM_NAMES := {"dirt": "Tierra", "stone": "Piedra", "wood": "Madera", "ore": "Mineral",
 	"cristal": "Cristal", "muralla": "Muralla", "fogata": "Fogata", "trampa": "Trampa", "torre": "Torre",
@@ -178,15 +282,20 @@ const CHEST_COINS := [3, 8]
 const SKULL_HEAL := 60         # curación de la calavera vital
 const SKULLS := [
 	{"nombre": "💎 Calavera del Tesoro", "buena": true, "efecto": "monedas",
-		"aviso": "💎 ¡Calavera del Tesoro! Una lluvia de Núcleos."},
+		"aviso": "💎 ¡Calavera del Tesoro! Una lluvia de Núcleos.",
+		"aviso_en": "💎 Treasure Skull! A shower of Cores."},
 	{"nombre": "💚 Calavera Vital", "buena": true, "efecto": "cura",
-		"aviso": "💚 ¡Calavera Vital! Tus heridas se cierran."},
+		"aviso": "💚 ¡Calavera Vital! Tus heridas se cierran.",
+		"aviso_en": "💚 Vital Skull! Your wounds close."},
 	{"nombre": "📦 Calavera del Botín", "buena": true, "efecto": "botin",
-		"aviso": "📦 ¡Calavera del Botín! Materiales caen en tus manos."},
+		"aviso": "📦 ¡Calavera del Botín! Materiales caen en tus manos.",
+		"aviso_en": "📦 Loot Skull! Materials fall into your hands."},
 	{"nombre": "😡 Calavera de la Furia", "buena": false, "efecto": "horda",
-		"aviso": "😡 ¡Calavera de la Furia! Algo se acerca corriendo..."},
+		"aviso": "😡 ¡Calavera de la Furia! Algo se acerca corriendo...",
+		"aviso_en": "😡 Fury Skull! Something comes running..."},
 	{"nombre": "👹 Calavera Maldita", "buena": false, "efecto": "bestia",
-		"aviso": "👹 ¡Calavera Maldita! Una bestia despierta a tu lado."},
+		"aviso": "👹 ¡Calavera Maldita! Una bestia despierta a tu lado.",
+		"aviso_en": "👹 Cursed Skull! A beast wakes beside you."},
 ]
 
 # Bloque 1 "Mundo vivo" — PRESIÓN AMBIENTAL (anti-turtling): vivir en cielo/
@@ -303,11 +412,13 @@ var _boss_announce_label: Label = null
 
 # --- Ajustes de control móvil/PC (local, per-device) ---
 var control_mode := "auto"          # "auto"/"movil"/"pc" (ver SETTINGS_PATH)
+var language := "auto"              # "auto"/"es"/"en" — idioma de la UI (local)
 var _joystick: Control = null       # joystick virtual (ui_builder lo crea en el HUD)
 var _settings_btn: Control = null
 var _settings_panel: Control = null
 var _settings_hint: Label = null
 var _control_buttons: Dictionary = {}   # "auto"/"movil"/"pc" -> Button
+var _lang_buttons: Dictionary = {}      # "auto"/"es"/"en" -> Button
 
 
 func _ready() -> void:
@@ -316,7 +427,7 @@ func _ready() -> void:
 	Net.player_connected.connect(_on_player_connected)
 	Net.player_disconnected.connect(_on_player_disconnected)
 	Net.connection_succeeded.connect(_on_connected_to_host)
-	Net.connection_failed.connect(func(): _show_toast("❌ No se pudo conectar al host"))
+	Net.connection_failed.connect(func(): _show_toast(L("t_conn_fail", "❌ No se pudo conectar al host")))
 	Net.server_disconnected.connect(_on_host_lost)
 
 	# ---- MODO SERVIDOR DEDICADO (GDD §1.2) ----
@@ -382,7 +493,7 @@ func _process(delta: float) -> void:
 			_boss_panel.show()
 			_boss_bar.value = bratio
 			if _boss_label != null:
-				_boss_label.text = "👹 " + str(npc_mgr.KINDS.get(bkind, {}).get("nombre", "JEFE")).to_upper()
+				_boss_label.text = "👹 " + boss_name(bkind).to_upper()
 		elif _boss_panel.visible:
 			_boss_panel.hide()
 
@@ -427,7 +538,7 @@ func _process(delta: float) -> void:
 		_phase_t -= delta
 		if not is_night and not _dusk_warned and _phase_t <= DUSK_WARN:
 			_dusk_warned = true
-			_broadcast_toast("🌆 Anochece en %d s — prepárate" % int(DUSK_WARN))
+			_broadcast_toast(L("t_dusk_fmt", "🌆 Anochece en %d s — prepárate") % int(DUSK_WARN))
 		if _phase_t <= 0.0:
 			_set_phase(not is_night)
 
@@ -438,13 +549,13 @@ func _process(delta: float) -> void:
 				_meteor_t = randf_range(70.0, 120.0)
 				_meteor_x = randi_range(6, world.W - 7)
 				_meteor_warn_t = METEOR_WARN
-				_broadcast_toast("☄️ ¡Meteoro inminente cerca de x=%d! Aléjate" % _meteor_x)
+				_broadcast_toast(L("t_meteor_warn_fmt", "☄️ ¡Meteoro inminente cerca de x=%d! Aléjate") % _meteor_x)
 		if _meteor_x >= 0:
 			_meteor_warn_t -= delta
 			if _meteor_warn_t <= 0.0:
 				var where: Vector2i = world.meteor_strike(_meteor_x)
 				_meteor_x = -1
-				_broadcast_toast("☄️ ¡Impacto! El meteoro dejó mineral en x=%d" % where.x)
+				_broadcast_toast(L("t_meteor_hit_fmt", "☄️ ¡Impacto! El meteoro dejó mineral en x=%d") % where.x)
 	elif multiplayer.multiplayer_peer != null:
 		# Cliente: solo cuenta hacia atrás para el HUD (el servidor manda)
 		_phase_t = maxf(0.0, _phase_t - delta)
@@ -455,6 +566,13 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		if multiplayer.multiplayer_peer != null and multiplayer.is_server() and world != null:
 			save_game()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		# Botón ATRÁS de Android: abre/cierra el menú de pausa/ajustes en vez
+		# de cerrar la app de golpe (publicación). En el lobby, sale del juego.
+		if _menu != null and not _menu.visible:
+			_on_settings_pressed()
+		else:
+			get_tree().quit()
 
 
 # -------------------------------------------------------------
@@ -474,7 +592,7 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	run_kills = 0
 	run_boss_kind = BOSS_KINDS.pick_random()
 	if Net.host_game() != OK:
-		_show_toast("❌ Error al crear la partida (¿puerto ocupado?)")
+		_show_toast(L("t_host_err", "❌ Error al crear la partida (¿puerto ocupado?)"))
 		return
 	_start_game()
 	if not (load_save and load_game()):
@@ -486,7 +604,7 @@ func _host(load_save: bool, mode: String = "sandbox") -> void:
 	_spawn_player(1, world.surface_spawn(randi_range(4, world.W - 5)), str(prof.skin), my_name)
 	_apply_inventory(inventories[1])
 	_apply_profile(prof)
-	_show_toast("🟢 Partida creada — comparte tu IP: %s" % Net.local_ip())
+	_show_toast(L("t_created_fmt", "🟢 Partida creada — comparte tu IP: %s") % Net.local_ip())
 	_broadcast_boss_announcement(run_boss_kind)
 
 
@@ -494,18 +612,18 @@ func _on_join_pressed() -> void:
 	my_name = _read_name()
 	var ip := _ip_input.text.strip_edges()
 	if ip.is_empty():
-		_show_toast("Escribe la IP del host")
+		_show_toast(L("t_write_ip", "Escribe la IP del host"))
 		return
 	if Net.join_game(ip) != OK:
-		_show_toast("❌ Dirección inválida")
+		_show_toast(L("t_bad_ip", "❌ Dirección inválida"))
 		return
-	_show_toast("Conectando a %s..." % ip)
+	_show_toast(L("t_connecting_fmt", "Conectando a %s...") % ip)
 
 
 func _on_connected_to_host() -> void:
 	_start_game()
 	request_join.rpc_id(1, my_name)
-	_show_toast("🟢 Conectado")
+	_show_toast(L("t_connected", "🟢 Conectado"))
 
 
 func _read_name() -> String:
@@ -708,12 +826,12 @@ func _apply_inventory(inv: Dictionary) -> void:
 				var d := int(inv.get(item, 0)) - int(_my_inv.get(item, 0))
 				if d > 0:
 					world.fx.float_text(me.position + Vector2(0, -36.0 - k * 16.0),
-						"+%d %s" % [d, ITEM_NAMES[item]], Color(1, 1, 1))
+						"+%d %s" % [d, item_name(item)], Color(1, 1, 1))
 					k += 1
 	_inv_init = true
 	_my_inv = inv
 	for item: String in _slot_buttons:
-		_slot_buttons[item].text = "%s\n%d" % [ITEM_NAMES[item], int(inv.get(item, 0))]
+		_slot_buttons[item].text = "%s\n%d" % [item_name(item), int(inv.get(item, 0))]
 	_refresh_info()
 	_refresh_craft()
 
@@ -761,19 +879,19 @@ func _do_craft(recipe_id: String, peer_id: int) -> void:
 	# Equipo (picos/espadas/armaduras) es único; bloques son apilables
 	var is_unique := recipe_id.begins_with("pico_") or recipe_id.begins_with("espada_") or recipe_id.begins_with("armadura_")
 	if is_unique and int(inv.get(recipe_id, 0)) > 0:
-		_toast_to(peer_id, "Ya tienes: %s" % RECIPES[recipe_id].nombre)
+		_toast_to(peer_id, L("t_have_fmt", "Ya tienes: %s") % recipe_name(recipe_id))
 		return
 	# Mejora por niveles: para el tier N+1 hace falta tener ya el tier N
 	var chain := _tier_chain_of(recipe_id)
 	if not chain.is_empty():
 		var idx := chain.find(recipe_id)
 		if idx > 0 and int(inv.get(chain[idx - 1], 0)) <= 0:
-			_toast_to(peer_id, "Primero fabrica: %s" % RECIPES[chain[idx - 1]].nombre)
+			_toast_to(peer_id, L("t_first_make_fmt", "Primero fabrica: %s") % recipe_name(chain[idx - 1]))
 			return
 	var costo: Dictionary = RECIPES[recipe_id].costo
 	for item: String in costo:
 		if int(inv.get(item, 0)) < int(costo[item]):
-			_toast_to(peer_id, "❌ Te faltan materiales para: %s" % RECIPES[recipe_id].nombre)
+			_toast_to(peer_id, L("t_no_mats_fmt", "❌ Te faltan materiales para: %s") % recipe_name(recipe_id))
 			return
 	for item: String in costo:
 		inv[item] = int(inv[item]) - int(costo[item])
@@ -783,7 +901,7 @@ func _do_craft(recipe_id: String, peer_id: int) -> void:
 		inv[recipe_id] = int(inv.get(recipe_id, 0)) + 1
 	inventories[peer_id] = inv
 	_push_inventory(peer_id)
-	_toast_to(peer_id, "🛠️ Fabricaste: %s" % RECIPES[recipe_id].nombre)
+	_toast_to(peer_id, L("t_crafted_fmt", "🛠️ Fabricaste: %s") % recipe_name(recipe_id))
 
 
 # -------------------------------------------------------------
@@ -847,7 +965,7 @@ func open_chest(miner_id: int, coord: Vector2i) -> void:
 		if n > 0:
 			resumen.append("%d %s" % [n, ITEM_NAMES.get(item, item)])
 	add_coins(miner_id, randi_range(CHEST_COINS[0], CHEST_COINS[1]))
-	_toast_to(miner_id, "📦 Cofre: %s" % ", ".join(resumen))
+	_toast_to(miner_id, L("t_chest_fmt", "📦 Cofre: %s") % ", ".join(resumen))
 	# Bloque 5: estallido dorado en TODOS los peers al abrirse el cofre
 	_broadcast_event_fx(_cell_center(coord), Color("f0c84a"), true)
 
@@ -876,7 +994,8 @@ func excavate_skull(miner_id: int, coord: Vector2i) -> void:
 		"bestia":
 			if p != null and npc_mgr != null:
 				npc_mgr.spawn_near("grande", p)
-	_broadcast_toast(str(skull.aviso))
+	var aviso := str(skull.aviso_en) if effective_lang() == "en" else str(skull.aviso)
+	_broadcast_toast(aviso)
 	# Bloque 5: estallido verde (buena) o rojo (mala) en TODOS los peers
 	var col := Color("4ae07a") if bool(skull.buena) else Color("e04a3a")
 	_broadcast_event_fx(_cell_center(coord), col, true)
@@ -933,17 +1052,13 @@ func count_kill(kind: String) -> void:
 		return
 	run_kills += 1
 	if kind in BOSS_KINDS:
-		var nombre := str(npc_mgr.KINDS.get(kind, {}).get("nombre", "Jefe"))
-		_broadcast_toast("⚔️ ¡%s derrotado!" % nombre)
+		_broadcast_toast(L("t_defeated_fmt", "⚔️ ¡%s derrotado!") % boss_name(kind))
 
 
 ## Texto del aviso de jefe de la run (Fase 10): nombre + táctica para
 ## que el jugador empiece a planear su defensa desde el minuto cero.
 func _boss_announcement(kind: String = run_boss_kind) -> String:
-	var info: Dictionary = npc_mgr.KINDS.get(kind, {})
-	var nombre := str(info.get("nombre", "Jefe"))
-	var hint := str(BOSS_HINTS.get(kind, ""))
-	return "👹 Jefe de esta run: %s — %s" % [nombre, hint]
+	return L("boss_run_fmt", "👹 Jefe de esta run: %s — %s") % [boss_name(kind), boss_hint(kind)]
 
 
 ## Banner dedicado (Bloque 1 "Mundo vivo"): más vistoso y duradero que
@@ -970,10 +1085,7 @@ func _broadcast_boss_announcement(kind: String) -> void:
 ## reutiliza el mismo banner que el anuncio inicial para que la mutación del
 ## jefe (npc_mgr.evolve_boss) no pase desapercibida en el ruido de toasts.
 func _boss_evolution_text(new_kind: String) -> String:
-	var info: Dictionary = npc_mgr.KINDS.get(new_kind, {})
-	var nombre := str(info.get("nombre", "Jefe"))
-	var hint := str(BOSS_HINTS.get(new_kind, ""))
-	return "🔥 ¡El jefe ha evolucionado! Ahora es: %s — %s" % [nombre, hint]
+	return L("boss_evolved_fmt", "🔥 ¡El jefe ha evolucionado! Ahora es: %s — %s") % [boss_name(new_kind), boss_hint(new_kind)]
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1031,12 +1143,12 @@ func _do_buy_skin(skin_id: String, peer_id: int) -> void:
 		return
 	var precio: int = SKINS[skin_id].precio
 	if int(prof.coins) < precio:
-		_toast_to(peer_id, "❌ Te faltan Núcleos para: %s (cuesta %d)" % [SKINS[skin_id].nombre, precio])
+		_toast_to(peer_id, L("t_no_coins_fmt", "❌ Te faltan Núcleos para: %s (cuesta %d)") % [SKINS[skin_id].nombre, precio])
 		return
 	prof.coins = int(prof.coins) - precio
 	prof.skins.append(skin_id)
 	_do_equip_skin(skin_id, peer_id)
-	_toast_to(peer_id, "🛒 ¡Compraste la skin %s!" % SKINS[skin_id].nombre)
+	_toast_to(peer_id, L("t_bought_skin_fmt", "🛒 ¡Compraste la skin %s!") % SKINS[skin_id].nombre)
 
 
 func _do_equip_skin(skin_id: String, peer_id: int) -> void:
@@ -1130,7 +1242,7 @@ func damage_player(peer_id: int, dmg: int) -> void:
 			players[peer_id].position = pos
 			players[peer_id].velocity = Vector2.ZERO
 			respawn_player.rpc_id(peer_id, pos)
-		_toast_to(peer_id, "💀 ¡Caíste! Reapareciendo...")
+		_toast_to(peer_id, L("t_fell", "💀 ¡Caíste! Reapareciendo..."))
 	player_hp[peer_id] = hp
 	if peer_id == 1:
 		if not dedicated:
@@ -1243,7 +1355,7 @@ func _update_zone_pressure(pid: int) -> void:
 		st.t += PRESSURE_CHECK_EVERY
 		if not st.warned and st.t >= PRESSURE_WARN_TIME:
 			st.warned = true
-			_toast_to(pid, "⚠️ Algo te acecha... fortifica o vuelve a la superficie")
+			_toast_to(pid, L("t_pressure_warn", "⚠️ Algo te acecha... fortifica o vuelve a la superficie"))
 		if st.t >= ZONE_PRESSURE_TIME:
 			st.t = 0.0
 			st.warned = false
@@ -1258,13 +1370,13 @@ func _trigger_zone_pressure(pid: int, zone: String, p: Node2D, count: int = 1) -
 	var kind := ""
 	match zone:
 		"cielo":
-			_toast_to(pid, "🌬️ Algo te ha seguido hasta las alturas...")
+			_toast_to(pid, L("t_pres_sky", "🌬️ Algo te ha seguido hasta las alturas..."))
 			kind = "murcielago"
 		"cueva":
-			_toast_to(pid, "🦇 No conviene quedarse tanto en la oscuridad...")
+			_toast_to(pid, L("t_pres_cave", "🦇 No conviene quedarse tanto en la oscuridad..."))
 			kind = "topo"
 		"profundo":
-			_toast_to(pid, "🔥 El calor del núcleo despierta algo cerca...")
+			_toast_to(pid, L("t_pres_deep", "🔥 El calor del núcleo despierta algo cerca..."))
 			kind = "taladro"
 	if kind.is_empty():
 		return
@@ -1315,16 +1427,16 @@ func _set_phase(night: bool) -> void:
 	_dusk_warned = false
 	if night:
 		night_number += 1
-		_broadcast_toast("🌙 ¡Noche %d! Resiste hasta el amanecer" % night_number)
+		_broadcast_toast(L("t_night_fmt", "🌙 ¡Noche %d! Resiste hasta el amanecer") % night_number)
 		var npcs_node: Node2D = get_node_or_null("NPCs")
 		if npcs_node != null:
 			npcs_node.night_wave(night_number)
 			if night_number % int(mode_cfg.boss_every) == 0:
 				var nombre := str(npcs_node.KINDS.get(run_boss_kind, {}).get("nombre", "Jefe"))
-				_broadcast_toast("👹 ¡%s ha llegado! (Noche %d)" % [nombre, night_number])
+				_broadcast_toast(L("t_boss_arrive_fmt", "👹 ¡%s ha llegado! (Noche %d)") % [boss_name(run_boss_kind), night_number])
 	else:
 		if night_number > 0:
-			_broadcast_toast("☀️ Amaneció — sobreviviste la noche %d" % night_number)
+			_broadcast_toast(L("t_dawn_fmt", "☀️ Amaneció — sobreviviste la noche %d") % night_number)
 			var reward := int(mode_cfg.night_reward_base) + int(mode_cfg.night_reward_step) * night_number
 			for pid: int in players:
 				add_coins(pid, reward)
@@ -1367,9 +1479,9 @@ func _update_phase_label() -> void:
 	var goal := int(mode_cfg.nights_to_win)
 	if is_night:
 		var meta := (" de %d" % goal) if goal > 0 else ""
-		_phase_label.text = "🌙 Noche %d%s — %d:%02d" % [night_number, meta, mm, ss]
+		_phase_label.text = L("phase_night_fmt", "🌙 Noche %d%s — %d:%02d") % [night_number, meta, mm, ss]
 	else:
-		_phase_label.text = "☀️ Día %d — %d:%02d" % [night_number + 1, mm, ss]
+		_phase_label.text = L("phase_day_fmt", "☀️ Día %d — %d:%02d") % [night_number + 1, mm, ss]
 
 
 # -------------------------------------------------------------
@@ -1403,7 +1515,7 @@ func _apply_run_ended(victory: bool, nights: int, kills: int) -> void:
 		return
 	var recursos := (int(_my_inv.get("dirt", 0)) + int(_my_inv.get("stone", 0))
 		+ int(_my_inv.get("wood", 0)) + int(_my_inv.get("ore", 0)))
-	_run_title.text = "🏆 ¡VICTORIA!" if victory else "💀 FIN DE LA RUN"
+	_run_title.text = L("run_victory", "🏆 ¡VICTORIA!") if victory else L("run_defeat", "💀 FIN DE LA RUN")
 	_run_title.add_theme_color_override("font_color",
 		Color(0.95, 0.8, 0.25) if victory else Color(0.9, 0.35, 0.3))
 	# El borde del panel toma el color del resultado (oro / rojo)
@@ -1411,10 +1523,10 @@ func _apply_run_ended(victory: bool, nights: int, kills: int) -> void:
 	if sb != null:
 		sb.border_color = Color(0.95, 0.78, 0.2, 0.8) if victory else Color(0.85, 0.2, 0.2, 0.8)
 		sb.set_border_width_all(2)
-	var body := "🌙 Noches sobrevividas: %d\n⚔️ Enemigos abatidos: %d\n📦 Recursos reunidos: %d\n🪙 Núcleos: %d" % [
+	var body := L("run_body_fmt", "🌙 Noches sobrevividas: %d\n⚔️ Enemigos abatidos: %d\n📦 Recursos reunidos: %d\n🪙 Núcleos: %d") % [
 		nights, kills, recursos, _my_coins]
 	if victory:
-		body += "\n✨ +%d de bono por la victoria" % int(mode_cfg.victory_bonus)
+		body += L("run_bonus_fmt", "\n✨ +%d de bono por la victoria") % int(mode_cfg.victory_bonus)
 	_run_body.text = body
 	_run_panel.show()
 	# Celebración o lamento (solo visual y local)
@@ -1564,7 +1676,7 @@ func _on_player_connected(id: int) -> void:
 		if dedicated:
 			print("[SERVIDOR] Jugador %d conectado" % id)
 		else:
-			_show_toast("🟢 Jugador %d conectado — IP del host: %s" % [id, Net.local_ip()])
+			_show_toast(L("t_player_conn_fmt", "🟢 Jugador %d conectado — IP del host: %s") % [id, Net.local_ip()])
 
 
 func _on_player_disconnected(id: int) -> void:
@@ -1637,11 +1749,15 @@ func _load_settings() -> void:
 	var m := str(cfg.get_value("control", "mode", "auto"))
 	if m in CONTROL_MODES:
 		control_mode = m
+	var lg := str(cfg.get_value("control", "lang", "auto"))
+	if lg in LANGS:
+		language = lg
 
 
 func _save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("control", "mode", control_mode)
+	cfg.set_value("control", "lang", language)
 	cfg.save(SETTINGS_PATH)
 
 
@@ -1689,10 +1805,98 @@ func _refresh_settings() -> void:
 		return
 	for mode: String in _control_buttons:
 		(_control_buttons[mode] as Button).button_pressed = (mode == control_mode)
+	for lg: String in _lang_buttons:
+		(_lang_buttons[lg] as Button).button_pressed = (lg == language)
 	var eff := effective_control_mode()
-	var det_txt := "móvil (pantalla táctil)" if _detect_platform() == "movil" else "PC (teclado/ratón)"
-	var eff_txt := "📱 joystick táctil" if eff == "movil" else "🖥️ teclado (WASD/flechas) + ratón"
-	_settings_hint.text = "Dispositivo detectado: %s\nControl activo: %s" % [det_txt, eff_txt]
+	var det_txt := L("dev_movil", "móvil (pantalla táctil)") if _detect_platform() == "movil" else L("dev_pc", "PC (teclado/ratón)")
+	var eff_txt := L("act_movil", "📱 joystick táctil") if eff == "movil" else L("act_pc", "🖥️ teclado (WASD/flechas) + ratón")
+	_settings_hint.text = L("hint_fmt", "Dispositivo detectado: %s\nControl activo: %s") % [det_txt, eff_txt]
+
+
+# -------------------------------------------------------------
+# IDIOMA ES/EN (local, per-device) — ver STRINGS_EN. El español es el texto
+# por defecto en línea; `L()` devuelve inglés solo si el idioma efectivo es
+# "en" y la clave existe. Cambiar idioma reconstruye la UI activa.
+# -------------------------------------------------------------
+func _detect_lang() -> String:
+	return "es" if OS.get_locale().begins_with("es") else "en"
+
+
+func effective_lang() -> String:
+	return _detect_lang() if language == "auto" else language
+
+
+## Texto localizado: inglés desde STRINGS_EN si toca, si no el español dado.
+func L(key: String, es_default: String) -> String:
+	if effective_lang() == "en" and STRINGS_EN.has(key):
+		return str(STRINGS_EN[key])
+	return es_default
+
+
+## Nombre de item localizado (slots, "+N item", etc.).
+func item_name(item: String) -> String:
+	if effective_lang() == "en" and ITEM_NAMES_EN.has(item):
+		return str(ITEM_NAMES_EN[item])
+	return str(ITEM_NAMES.get(item, item))
+
+
+## Nombre de equipo (herramienta) localizado (panel Fabricar, etiquetas, toasts).
+func recipe_name(rid: String) -> String:
+	if effective_lang() == "en" and RECIPE_NAMES_EN.has(rid):
+		return str(RECIPE_NAMES_EN[rid])
+	return str(RECIPES.get(rid, {}).get("nombre", rid))
+
+
+## Nombre y pista de un jefe localizados (anuncios, banner, derrota).
+func boss_name(kind: String) -> String:
+	if effective_lang() == "en" and BOSS_NAMES_EN.has(kind):
+		return str(BOSS_NAMES_EN[kind])
+	return str(npc_mgr.KINDS.get(kind, {}).get("nombre", "Jefe")) if npc_mgr != null else "Jefe"
+
+
+func boss_hint(kind: String) -> String:
+	if effective_lang() == "en" and BOSS_HINTS_EN.has(kind):
+		return str(BOSS_HINTS_EN[kind])
+	return str(BOSS_HINTS.get(kind, ""))
+
+
+func set_language(lang: String) -> void:
+	if lang not in LANGS or lang == language:
+		return
+	language = lang
+	_save_settings()
+	_apply_language()
+
+
+## Reconstruye la UI activa (lobby y/o HUD) con el idioma nuevo, conservando
+## el estado de juego (inventario, vida, control). El mundo/NPCs no se tocan.
+func _apply_language() -> void:
+	var in_game := _menu != null and not _menu.visible
+	if _ui != null:
+		_ui.queue_free()
+	_lang_buttons.clear()
+	_control_buttons.clear()
+	_slot_buttons.clear()
+	_build_ui()                       # reconstruye lobby (crea _ui nuevo)
+	if in_game:
+		_menu.hide()
+		_show_hud()
+		_apply_inventory(_my_inv)     # re-rotula los slots con el idioma nuevo
+		_set_hp(_my_hp)
+		_apply_control_mode()
+	_on_settings_pressed()            # reabre Ajustes para ver el cambio aplicado
+
+
+# -------------------------------------------------------------
+# MENÚ DE SALIDA (publicación): el panel de Ajustes hace de menú de pausa.
+# -------------------------------------------------------------
+## Vuelve al menú principal (recarga la escena: cierra la red y resetea limpio).
+func _on_main_menu_pressed() -> void:
+	get_tree().reload_current_scene()
+
+
+func _on_quit_pressed() -> void:
+	get_tree().quit()
 
 
 func _on_shop_pressed() -> void:
@@ -1710,14 +1914,14 @@ func _on_skin_pressed(sid: String) -> void:
 func _refresh_shop() -> void:
 	if _shop_panel == null:
 		return
-	_shop_title.text = "🛒 Tienda de skins — tienes 🪙 %d Núcleos" % _my_coins
+	_shop_title.text = L("shop_title_fmt", "🛒 Tienda de skins — tienes 🪙 %d Núcleos") % _my_coins
 	for sid: String in _shop_rows:
 		var b: Button = _shop_rows[sid]
 		if sid == _my_skin:
-			b.text = "✓ Equipada"
+			b.text = L("skin_equipped", "✓ Equipada")
 			b.disabled = true
 		elif sid in _my_skins:
-			b.text = "Equipar"
+			b.text = L("skin_equip", "Equipar")
 			b.disabled = false
 		else:
 			b.text = "🪙 %d" % int(SKINS[sid].precio)
@@ -1742,17 +1946,17 @@ func _refresh_craft() -> void:
 			var necesito := int(costo[item])
 			if tengo < necesito:
 				alcanza = false
-			partes.append("%s %d/%d" % [ITEM_NAMES[item].to_lower(), tengo, necesito])
+			partes.append("%s %d/%d" % [item_name(item).to_lower(), tengo, necesito])
 		if maxed:
-			lbl.text = "✓ %s — nivel máximo" % RECIPES[rid].nombre
+			lbl.text = L("craft_maxed_fmt", "✓ %s — nivel máximo") % recipe_name(rid)
 			btn.disabled = true
 		elif has_chain:
-			lbl.text = "%s — %s" % [RECIPES[rid].nombre, ", ".join(partes)]
+			lbl.text = "%s — %s" % [recipe_name(rid), ", ".join(partes)]
 			btn.disabled = not alcanza
 		else:
 			var count := int(_my_inv.get(rid, 0))
 			var prefix := "(%d) " % count if count > 0 else ""
-			lbl.text = "%s%s — %s" % [prefix, RECIPES[rid].nombre, ", ".join(partes)]
+			lbl.text = "%s%s — %s" % [prefix, recipe_name(rid), ", ".join(partes)]
 			btn.disabled = not alcanza
 
 
@@ -1771,20 +1975,20 @@ func _refresh_status() -> void:
 		return
 	_hp_bar.value = _my_hp
 	_hp_label.text = "%d/%d" % [_my_hp, PLAYER_MAX_HP]
-	var tool_name := "Mano"
+	var tool_name := L("tool_hand", "Mano")
 	for t: String in TOOL_DAMAGE:
 		if int(_my_inv.get(t, 0)) > 0:
-			tool_name = RECIPES[t].nombre
+			tool_name = recipe_name(t)
 			break
-	var weapon_name := "Puños"
+	var weapon_name := L("weapon_fists", "Puños")
 	for wpn: String in WEAPON_DAMAGE:
 		if int(_my_inv.get(wpn, 0)) > 0:
-			weapon_name = RECIPES[wpn].nombre
+			weapon_name = recipe_name(wpn)
 			break
-	var armor_name := "Sin armadura"
+	var armor_name := L("no_armor", "Sin armadura")
 	for arm: String in ARMOR_REDUCTION:
 		if int(_my_inv.get(arm, 0)) > 0:
-			armor_name = RECIPES[arm].nombre
+			armor_name = recipe_name(arm)
 			break
 	_tool_label.text = "⛏ %s   ⚔ %s" % [tool_name, weapon_name]
 	_armor_label.text = "🛡 %s" % armor_name

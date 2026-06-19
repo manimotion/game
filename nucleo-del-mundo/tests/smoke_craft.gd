@@ -19,6 +19,10 @@ func _ready() -> void:
 	var main := Node2D.new()
 	main.set_script(MainScript)
 	add_child(main)
+	# Idioma FIJO en español: la suite verifica textos en español y la máquina
+	# de CI puede tener locale inglés (el "auto" detectaría EN y rompería los
+	# checks). Un test dedicado (abajo) prueba el inglés explícitamente.
+	main.language = "es"
 
 	if Net.host_game() != OK:
 		print("ERROR: no se pudo abrir el servidor (host_game)")
@@ -1551,6 +1555,29 @@ func _ready() -> void:
 	var normal_img: Image = Atlas.slimes["normal"].get_image()
 	_check("los slimes tienen carácter por variante (el dorado luce corona, el normal no)",
 		dorado_img.get_pixel(7, 0).a > 0.5 and normal_img.get_pixel(7, 0).a < 0.1)
+
+	# ---- TEST 48: idioma ES/EN + menú de salida (publicación) ----
+	_check("L() devuelve español por defecto (idioma auto/es)",
+		main.L("join", "🔗 Unirse a partida") == "🔗 Unirse a partida")
+	main.set_language("en")
+	print("[48] idioma EN -> Fabricar:", main._craft_btn.text, " | item_name(diamante):", main.item_name("diamante"))
+	_check("set_language('en') traduce la UI a inglés (lobby + HUD + items)",
+		main.effective_lang() == "en"
+		and main.L("join", "🔗 Unirse a partida") == "🔗 Join game"
+		and main.item_name("diamante") == "Diamond"
+		and main._craft_btn.text == "🛠️ Craft")
+	_check("EN: las HERRAMIENTAS y el jefe se traducen (recipe_name/boss_name/boss_hint)",
+		main.recipe_name("pico_madera") == "Wooden Pickaxe"
+		and main.boss_name("jefe_topo") == "Mega Mole"
+		and "digs" in main.boss_hint("jefe_topo"))
+	_check("EN: los MENSAJES se traducen (toast de noche + aviso de calavera)",
+		"Night" in main.L("t_night_fmt", "🌙 ¡Noche %d!")
+		and main.SKULLS[0].has("aviso_en") and "Skull" in str(main.SKULLS[0].aviso_en))
+	_check("el panel de Ajustes tiene selector de idioma (3) + handlers de salida (menú/salir)",
+		main._lang_buttons.size() == 3
+		and main.has_method("_on_main_menu_pressed") and main.has_method("_on_quit_pressed"))
+	main.set_language("auto")
+	_check("set_language('auto') vuelve al idioma del dispositivo", main.language == "auto")
 
 	print("")
 	if _fail == 0:

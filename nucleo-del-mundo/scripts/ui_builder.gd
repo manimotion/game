@@ -89,7 +89,7 @@ static func build_lobby(m: Node2D) -> void:
 	box.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "De día construye. De noche sobrevive."
+	subtitle.text = m.L("subtitle", "De día construye. De noche sobrevive.")
 	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	subtitle.modulate = Color(1, 1, 1, 0.6)
 	box.add_child(subtitle)
@@ -99,7 +99,7 @@ static func build_lobby(m: Node2D) -> void:
 	# Nombre de jugador: clave del perfil (Núcleos y skins persisten por nombre)
 	m._name_input = LineEdit.new()
 	m._name_input.text = "Jugador"
-	m._name_input.placeholder_text = "Tu nombre (guarda tus Núcleos y skins)"
+	m._name_input.placeholder_text = m.L("name_ph", "Tu nombre (guarda tus Núcleos y skins)")
 	m._name_input.max_length = 16
 	m._name_input.custom_minimum_size.y = 48
 	box.add_child(m._name_input)
@@ -107,12 +107,13 @@ static func build_lobby(m: Node2D) -> void:
 	# Modos de juego DATA-DRIVEN: la capa de reglas decide qué existe.
 	for mode_id: String in GameModesScript.LOBBY_ORDER:
 		var cfg: Dictionary = GameModesScript.MODES[mode_id]
-		var goal := ("%d noches" % int(cfg.nights_to_win)) if int(cfg.nights_to_win) > 0 else "sin fin"
-		var btn := _accent_button("%s %s — %s (host)" % [cfg.icono, cfg.nombre, goal])
+		var nm: String = m.L("mode_%s_name" % mode_id, str(cfg.nombre))
+		var goal: String = (m.L("nights_fmt", "%d noches") % int(cfg.nights_to_win)) if int(cfg.nights_to_win) > 0 else m.L("endless", "sin fin")
+		var btn := _accent_button("%s %s — %s (%s)" % [cfg.icono, nm, goal, m.L("host_suffix", "host")])
 		btn.pressed.connect(func(): m._host(false, mode_id))
 		box.add_child(btn)
 		var dl := Label.new()
-		dl.text = str(cfg.desc)
+		dl.text = m.L("mode_%s_desc" % mode_id, str(cfg.desc))
 		dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		dl.add_theme_font_size_override("font_size", 13)
 		dl.modulate = COL_TEXT_DIM
@@ -120,7 +121,7 @@ static func build_lobby(m: Node2D) -> void:
 
 	if FileAccess.file_exists(m.SAVE_PATH):
 		var cont_btn := Button.new()
-		cont_btn.text = "💾 Continuar partida guardada"
+		cont_btn.text = m.L("continue_save", "💾 Continuar partida guardada")
 		cont_btn.custom_minimum_size.y = 52
 		cont_btn.pressed.connect(func(): m._host(true))
 		box.add_child(cont_btn)
@@ -129,12 +130,12 @@ static func build_lobby(m: Node2D) -> void:
 
 	m._ip_input = LineEdit.new()
 	m._ip_input.text = "127.0.0.1"
-	m._ip_input.placeholder_text = "IP del host (ej: 192.168.1.50)"
+	m._ip_input.placeholder_text = m.L("ip_ph", "IP del host (ej: 192.168.1.50)")
 	m._ip_input.custom_minimum_size.y = 48
 	box.add_child(m._ip_input)
 
 	var join_btn := Button.new()
-	join_btn.text = "🔗 Unirse a partida"
+	join_btn.text = m.L("join", "🔗 Unirse a partida")
 	join_btn.custom_minimum_size.y = 52
 	join_btn.pressed.connect(m._on_join_pressed)
 	box.add_child(join_btn)
@@ -142,7 +143,7 @@ static func build_lobby(m: Node2D) -> void:
 	box.add_child(HSeparator.new())
 
 	var settings_btn := Button.new()
-	settings_btn.text = "⚙️ Ajustes (control móvil/PC)"
+	settings_btn.text = m.L("settings_btn_lobby", "⚙️ Ajustes (controles / idioma)")
 	settings_btn.custom_minimum_size.y = 48
 	settings_btn.pressed.connect(m._on_settings_pressed)
 	box.add_child(settings_btn)
@@ -177,7 +178,7 @@ static func _build_settings_panel(m: Node2D) -> void:
 	var top := HBoxContainer.new()
 	box.add_child(top)
 	var title := Label.new()
-	title.text = "⚙️ Ajustes — Control"
+	title.text = m.L("settings_title", "⚙️ Ajustes")
 	title.add_theme_font_size_override("font_size", 20)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(title)
@@ -188,17 +189,17 @@ static func _build_settings_panel(m: Node2D) -> void:
 	top.add_child(close)
 
 	var sub := Label.new()
-	sub.text = "Cómo se controla el juego en este dispositivo:"
+	sub.text = m.L("ctrl_sub", "Cómo se controla el juego en este dispositivo:")
 	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
 	sub.modulate = COL_TEXT_DIM
 	box.add_child(sub)
 
-	# Las 3 opciones, en un ButtonGroup (selección única).
+	# Las 3 opciones de control, en un ButtonGroup (selección única).
 	var group := ButtonGroup.new()
 	var opciones := {
-		"auto": "🔍 Automático (según el dispositivo)",
-		"movil": "📱 Móvil — joystick táctil",
-		"pc": "🖥️ PC — teclado (WASD/flechas) + ratón",
+		"auto": m.L("ctrl_auto", "🔍 Automático (según el dispositivo)"),
+		"movil": m.L("ctrl_movil", "📱 Móvil — joystick táctil"),
+		"pc": m.L("ctrl_pc", "🖥️ PC — teclado (WASD/flechas) + ratón"),
 	}
 	for mode: String in opciones:
 		var b := _accent_button(opciones[mode], 48.0)
@@ -215,6 +216,38 @@ static func _build_settings_panel(m: Node2D) -> void:
 	m._settings_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	m._settings_hint.modulate = COL_TEXT_DIM
 	box.add_child(m._settings_hint)
+
+	# --- IDIOMA / LANGUAGE (ES/EN) ---
+	box.add_child(HSeparator.new())
+	var lang_lbl := Label.new()
+	lang_lbl.text = m.L("lang_label", "🌐 Idioma / Language:")
+	box.add_child(lang_lbl)
+	var lang_row := HBoxContainer.new()
+	lang_row.add_theme_constant_override("separation", 8)
+	box.add_child(lang_row)
+	var lgroup := ButtonGroup.new()
+	var langs := {"auto": m.L("lang_auto", "Auto"), "es": m.L("lang_es", "Español"), "en": m.L("lang_en", "English")}
+	for lg: String in langs:
+		var lb := _accent_button(langs[lg], 44.0)
+		lb.toggle_mode = true
+		lb.button_group = lgroup
+		lb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lb.pressed.connect(func(): m.set_language(lg))
+		lang_row.add_child(lb)
+		m._lang_buttons[lg] = lb
+
+	# --- MENÚ DE SALIDA / PAUSA (publicación) ---
+	box.add_child(HSeparator.new())
+	var menu_btn := Button.new()
+	menu_btn.text = m.L("main_menu", "🏠 Menú principal")
+	menu_btn.custom_minimum_size.y = 46
+	menu_btn.pressed.connect(m._on_main_menu_pressed)
+	box.add_child(menu_btn)
+	var quit_btn := Button.new()
+	quit_btn.text = m.L("quit", "🚪 Salir del juego")
+	quit_btn.custom_minimum_size.y = 46
+	quit_btn.pressed.connect(m._on_quit_pressed)
+	box.add_child(quit_btn)
 
 
 # -------------------------------------------------------------
@@ -402,7 +435,7 @@ static func build_hud(m: Node2D) -> void:
 		b.toggle_mode = true
 		b.button_group = group
 		b.custom_minimum_size = Vector2(96, 72)
-		b.text = "%s\n0" % m.ITEM_NAMES[item]
+		b.text = "%s\n0" % m.item_name(item)
 		b.pressed.connect(func(): m.selected_item = item)
 		slots.add_child(b)
 		m._slot_buttons[item] = b
@@ -411,7 +444,7 @@ static func build_hud(m: Node2D) -> void:
 
 	# --- Botón y panel de crafting (arriba a la derecha) ---
 	var craft_btn := Button.new()
-	craft_btn.text = "🛠️ Fabricar"
+	craft_btn.text = m.L("craft", "🛠️ Fabricar")
 	craft_btn.custom_minimum_size = Vector2(150, 52)
 	craft_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	craft_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -438,7 +471,7 @@ static func build_hud(m: Node2D) -> void:
 	var ptop := HBoxContainer.new()
 	pbox.add_child(ptop)
 	var ptitle := Label.new()
-	ptitle.text = "🛠️ Fabricar (usa materiales, NO Núcleos)"
+	ptitle.text = m.L("craft_title", "🛠️ Fabricar (usa materiales, NO Núcleos)")
 	ptitle.add_theme_font_size_override("font_size", 18)
 	ptitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	ptop.add_child(ptitle)
@@ -491,7 +524,7 @@ static func build_hud(m: Node2D) -> void:
 
 	# --- Botón y panel de la TIENDA de skins (MONETIZACIÓN) ---
 	var shop_btn := Button.new()
-	shop_btn.text = "🛒 Tienda (skins)"
+	shop_btn.text = m.L("shop", "🛒 Tienda (skins)")
 	shop_btn.custom_minimum_size = Vector2(170, 52)
 	shop_btn.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
 	shop_btn.grow_horizontal = Control.GROW_DIRECTION_BEGIN
@@ -575,7 +608,7 @@ static func build_hud(m: Node2D) -> void:
 	rbox.add_child(m._run_body)
 
 	var run_close := Button.new()
-	run_close.text = "Continuar en modo libre"
+	run_close.text = m.L("run_close", "Continuar en modo libre")
 	run_close.custom_minimum_size.y = 52
 	run_close.pressed.connect(func(): rpanel.hide())
 	rbox.add_child(run_close)

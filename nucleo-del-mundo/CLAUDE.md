@@ -178,6 +178,25 @@ a 10 Hz por rpc unreliable. Los clientes solo dibujan. Nuevos enemigos siguen es
   HUD (top-right, a la izquierda de Fabricar/Tienda). `build_hud` también
   guarda `m._joystick` (el joystick virtual) para que main lo active/
   desactive según el modo.
+  IDIOMA ES/EN + MENÚ DE SALIDA (publicación): el mismo panel de Ajustes
+  hace de MENÚ DE PAUSA. Lleva además un selector de idioma (3 botones
+  `auto`/`es`/`en` → `m.set_language`, refs en `m._lang_buttons`) y dos
+  botones de salida: "🏠 Menú principal" (`m._on_main_menu_pressed` →
+  `reload_current_scene`) y "🚪 Salir" (`m._on_quit_pressed` → `quit`).
+  TODOS los textos de chrome se envuelven en `m.L(clave, es_default)` (los
+  items en `m.item_name`), así el español es el default en línea y el inglés
+  vive en `main.STRINGS_EN`/`ITEM_NAMES_EN`. Cambiar idioma reconstruye la UI
+  activa (`main._apply_language`). El botón ATRÁS de Android abre este panel
+  (`main._notification` → `NOTIFICATION_WM_GO_BACK_REQUEST`).
+  COBERTURA COMPLETA (pasada de localización): además del chrome, se traducen
+  las HERRAMIENTAS (`recipe_name`/`RECIPE_NAMES_EN`: nombres de pico/espada/
+  armadura/bloques en el panel Fabricar y etiquetas del HUD), los JEFES
+  (`boss_name`/`boss_hint` + `BOSS_NAMES_EN`/`BOSS_HINTS_EN`: anuncio, banner,
+  barra, derrota), el reloj día/noche, el panel de fin de run, las calaveras
+  (`SKULLS[i].aviso_en`) y TODOS los toasts (`t_*` en `STRINGS_EN`, conservando
+  el emoji de prefijo que dispara el sonido). El smoke test fuerza
+  `main.language = "es"` al inicio (la máquina de CI puede ser EN y rompería
+  los checks en español); TEST 48 valida el inglés explícito.
 - `scripts/network_manager.gd` — autoload `Net`. Host/join ENet, señales de conexión.
 - `scripts/sfx.gd` — autoload `Sfx`. SFX y música de fondo procedurales (WAV sintetizado
   al arrancar; la música es un loop suave Am–F–C–G, omitida en headless). 100% local y

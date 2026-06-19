@@ -796,7 +796,7 @@ func night_wave(night: int) -> bool:
 			# Avisar dónde palpita el nido (dar contrajuego es la regla),
 			# DEMORADO unos segundos para no pisar el toast de "¡Noche N!"
 			get_tree().create_timer(4.0).timeout.connect(func():
-				main._broadcast_toast("🕳️ Un nido palpita bajo tierra cerca de x=%d — destrúyelo" % nc.x))
+				main._broadcast_toast(main.L("t_nest_fmt", "🕳️ Un nido palpita bajo tierra cerca de x=%d — destrúyelo") % nc.x))
 	return count > 0
 
 
